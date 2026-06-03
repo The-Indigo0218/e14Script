@@ -1,0 +1,16 @@
+# Entorno
+.venv/
+__pycache__/
+*.pyc
+
+# Claves / secretos
+.env
+
+# Datos y salidas generadas
+*.db
+*.xlsx
+debug/
+salidas/
+
+# Sistema
+.DS_Store

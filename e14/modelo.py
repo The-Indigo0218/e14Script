@@ -1,0 +1,111 @@
+"""
+Modelo de datos compartido (el "contrato" entre los 3 scripts).
+
+Tanto el lector de testigos como el de la Registraduría deben producir un
+objeto ActaE14 con esta MISMA estructura. El comparador asume esta estructura.
+
+Así, "divide y vencerás": cada script es independiente, pero todos hablan el
+mismo idioma (estas columnas).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, asdict
+
+# ─── CANDIDATOS PRESIDENCIALES 2026 — PRIMERA VUELTA ──────────────────────────
+# número (str) -> (nombre, agrupación)
+CANDIDATOS: dict[str, tuple[str, str]] = {
+    "1":  ("IVÁN CEPEDA CASTRO",               "PACTO HISTÓRICO"),
+    "2":  ("CLAUDIA LÓPEZ",                     "UNA NUEVA HISTORIA"),
+    "3":  ("RAÚL SANTIAGO BOTERO JARAMILLO",    "ROMPER EL SISTEMA"),
+    "4":  ("ABELARDO DE LA ESPRIELLA",          "DEFENSORES DE LA PATRIA"),
+    "5":  ("ÓSCAR MAURICIO LIZCANO ARANGO",     "COALICIÓN ASI/RAMÍREZ"),
+    "6":  ("MIGUEL URIBE LONDOÑO",              "CENTRO DEMOCRÁTICO"),
+    "7":  ("SONDRA MACOLLINS GARVIN PINTO",     "SONDRA 2026"),
+    "8":  ("ROY LEONARDO BARRERAS MONTEALEGRE", "LA FUERZA"),
+    "9":  ("CARLOS EDUARDO CAICEDO OMAR",       "FUERZA CIUDADANA"),
+    "10": ("GUSTAVO MATAMOROS CAMACHO",         "PARTIDO ECOLOGISTA COLOMBIANO"),
+    "11": ("PALOMA VALENCIA LASERNA",           "CENTRO DEMOCRÁTICO"),
+    "12": ("SERGIO FAJARDO VALDERRAMA",         "FAJARDO PRESIDENTE"),
+    "13": ("LUIS GILBERTO MURILLO URRUTIA",     "LA OPORTUNIDAD DE COLOMBIA"),
+}
+
+# Categorías de votos NO atribuibles a un candidato
+CATEGORIAS_NO_CANDIDATO = ["blanco", "nulos", "no_marcados"]
+
+# Identificadores de fuente
+FUENTE_TESTIGO = "testigo"
+FUENTE_REGISTRADURIA = "registraduria"
+
+
+def columnas_voto() -> list[str]:
+    """Orden canónico de las columnas de votos (candidatos + categorías)."""
+    return [f"c{n}" for n in range(1, 14)] + list(CATEGORIAS_NO_CANDIDATO)
+
+
+@dataclass
+class ActaE14:
+    """Una lectura de un acta E-14 para una mesa, desde una fuente."""
+
+    # ── Identificación de la mesa (clave para comparar) ──
+    codigo_mesa: str                 # identificador único de mesa (ej. "88-128-15-85-001")
+    fuente: str                      # FUENTE_TESTIGO o FUENTE_REGISTRADURIA
+
+    # ── Metadatos (informativos) ──
+    departamento: str | None = None
+    municipio: str | None = None
+    zona: str | None = None
+    puesto: str | None = None
+    mesa: str | None = None
+
+    # ── Votos por candidato (c1..c13) ──
+    c1: int | None = None
+    c2: int | None = None
+    c3: int | None = None
+    c4: int | None = None
+    c5: int | None = None
+    c6: int | None = None
+    c7: int | None = None
+    c8: int | None = None
+    c9: int | None = None
+    c10: int | None = None
+    c11: int | None = None
+    c12: int | None = None
+    c13: int | None = None
+
+    # ── Otras categorías ──
+    blanco: int | None = None
+    nulos: int | None = None
+    no_marcados: int | None = None
+
+    # ── Totales del acta ──
+    suma_total: int | None = None
+    total_votos_urna: int | None = None
+    total_votantes_e11: int | None = None
+
+    # ── Trazabilidad / auditoría ──
+    archivo_origen: str | None = None       # ruta del PDF/imagen leído
+    confianza: float | None = None          # 0..1 de la lectura (OCR)
+    necesita_revision: bool = False         # marcado para revisión humana
+    notas: str | None = None
+
+    def votos(self) -> dict[str, int | None]:
+        """Devuelve {columna_voto: valor} en orden canónico."""
+        return {col: getattr(self, col) for col in columnas_voto()}
+
+    def suma_calculada(self) -> int:
+        """Suma de candidatos + blanco + nulos + no_marcados (ignora None)."""
+        return sum(v for v in self.votos().values() if v is not None)
+
+    def cuadra_internamente(self) -> bool | None:
+        """
+        Validación interna (capa 4): la suma de votos debe coincidir con el
+        total declarado en el acta. None si no hay total para comparar.
+        """
+        objetivo = self.suma_total if self.suma_total is not None else self.total_votos_urna
+        if objetivo is None:
+            return None
+        return self.suma_calculada() == objetivo
+
+    def como_dict(self) -> dict:
+        return asdict(self)
