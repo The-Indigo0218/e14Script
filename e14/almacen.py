@@ -16,7 +16,8 @@ from pathlib import Path
 from e14.modelo import ActaE14, columnas_voto
 
 _COLUMNAS_META = [
-    "codigo_mesa", "fuente", "departamento", "municipio", "zona", "puesto", "mesa",
+    "codigo_mesa", "fuente", "tipo_acta",
+    "departamento", "municipio", "zona", "puesto", "mesa",
 ]
 _COLUMNAS_TOTALES = ["suma_total", "total_votos_urna", "total_votantes_e11"]
 _COLUMNAS_AUDIT = ["archivo_origen", "confianza", "necesita_revision", "notas"]
@@ -34,7 +35,7 @@ class Almacen:
     def _crear_tabla(self) -> None:
         cols_def = []
         for c in _TODAS:
-            if c in ("codigo_mesa", "fuente", "departamento", "municipio",
+            if c in ("codigo_mesa", "fuente", "tipo_acta", "departamento", "municipio",
                      "zona", "puesto", "mesa", "archivo_origen", "notas"):
                 tipo = "TEXT"
             elif c == "confianza":

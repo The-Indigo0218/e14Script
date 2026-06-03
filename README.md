@@ -29,12 +29,20 @@ e14/                paquete con la lógica
   alineacion.py     CAPA 1: alineación contra la plantilla oficial
   ocr.py            CAPA 2: backends Gemini / GPT / manual
   comparador.py     CAPA 3: lógica de comparación
-leer_testigos.py        SCRIPT 1: E-14 del testigo (CSV) → tabla
+  lectura.py        lectura compartida PDF → ActaE14 (la usan ambos lectores)
+leer_testigos.py        SCRIPT 1: E-14 del testigo (CSV o PDF/OCR) → tabla
 leer_registraduria.py   SCRIPT 2: PDF oficial → capa1 → OCR → tabla
 comparar.py             SCRIPT 3: cruza fuentes → Excel de discrepancias
+probar_api.py           verifica que la clave del .env funcione (ping mínimo)
 plantillas/             plantilla oficial en blanco del E-14
-ejemplos/               datos de ejemplo
+datos/
+  registraduria/        coloca aquí los E-14 OFICIALES en PDF
+  testigos/             coloca aquí los E-14 de TESTIGOS en PDF (o usa un CSV)
+ejemplos/               datos de ejemplo (CSV de testigos)
 ```
+
+> Nombra cada PDF con el **código de mesa** (ej. `88-128-15-85-001.pdf`) e igual en
+> ambas carpetas, para que la comparación cruce la misma mesa.
 
 ## Instalación
 
@@ -44,27 +52,67 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Conectar la API (único paso pendiente)
+## Probar GRATIS con Gemini Flash (antes de pagar nada)
+
+Gemini tiene **capa gratuita** en Google AI Studio. Sirve para validar el flujo con
+unas pocas actas sin gastar.
+
+1. Saca una clave gratis en https://aistudio.google.com/apikey
+2. Pégala en el archivo `.env` (ya creado):
 
 ```bash
-cp .env.example .env
-# edita .env y pon GEMINI_API_KEY=...   (o OPENAI_API_KEY=...)
+GEMINI_API_KEY=AIza...tu_clave...
 ```
 
-La fábrica `crear_backend()` detecta la clave automáticamente. Nada más cambia.
-
-## Uso
+3. Verifica que la clave responde:
 
 ```bash
-# 1) E-14 de testigos desde CSV
-python leer_testigos.py ejemplos/ejemplo_testigos.csv actas.db
+python probar_api.py        # debe decir: ✅ La API respondió correctamente
+```
 
-# 2) E-14 oficial (PDF o carpeta). Con clave → lee de verdad; sin clave → modo manual
-python leer_registraduria.py acta_oficial.pdf actas.db --codigo 88-128-15-85-001
+El modelo por defecto es `gemini-2.5-flash` (rápido y dentro de la capa gratis).
+La fábrica `crear_backend()` detecta la clave automáticamente; nada más cambia.
+
+## Uso (prueba con 2 actas)
+
+Pon un E-14 en cada carpeta con el **mismo nombre = código de mesa**:
+`datos/registraduria/88-128-15-85-001.pdf` y `datos/testigos/88-128-15-85-001.pdf`.
+
+```bash
+# 1) E-14 de testigos (carpeta de PDFs por OCR; o un CSV)
+python leer_testigos.py datos/testigos actas.db
+
+# 2) E-14 oficial (carpeta de PDFs). Con clave → lee de verdad; sin clave → modo manual
+python leer_registraduria.py datos/registraduria actas.db
 
 # 3) comparar y generar Excel de discrepancias
 python comparar.py actas.db comparacion_E14.xlsx
 ```
+
+## Ejemplar del E-14 (de qué COPIA salió el dato)
+
+El E-14 se imprime en varias copias con la misma información pero distinto destinatario.
+Cada acta guarda de cuál copia se tomó el dato (campo `tipo_acta`), para poder auditarlo:
+
+| Tipo | Quién la guarda | Uso típico |
+|---|---|---|
+| `claveros` | Claveros (arca triclave) | copia que suele tener el testigo |
+| `delegados` | Delegados de la Registraduría | suele ser la copia oficial publicada |
+| `transmision` | Puesto de transmisión | usada para el pre-conteo |
+| `desconocido` | — | no se indicó |
+
+Cómo indicarlo:
+
+```bash
+# Por línea de comando
+python leer_testigos.py datos/testigos actas.db --tipo claveros
+python leer_registraduria.py datos/registraduria actas.db --tipo delegados
+
+# O por fila, con la columna 'tipo_acta' en el CSV de testigos (manda sobre --tipo)
+```
+
+El Excel de comparación muestra dos columnas, **Ejemplar (Testigo)** y **Ejemplar
+(Registr.)**, para que en cada mesa quede registrado de dónde vino cada cifra.
 
 ## Criterios de revisión manual
 

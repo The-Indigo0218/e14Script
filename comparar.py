@@ -17,7 +17,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from e14.almacen import Almacen
-from e14.modelo import FUENTE_TESTIGO, FUENTE_REGISTRADURIA, columnas_voto
+from e14.modelo import FUENTE_TESTIGO, FUENTE_REGISTRADURIA, columnas_voto, etiqueta_tipo_acta
 from e14.comparador import comparar, resumen, etiqueta_columna
 
 VERDE = "C6EFCE"
@@ -65,7 +65,7 @@ def generar_excel(comparaciones, salida):
     # ── Hoja Comparación (todas las columnas, testigo | reg | dif) ──
     ws2 = wb.create_sheet("Comparación")
     cols = columnas_voto()
-    encabezados = ["Mesa", "Estado"]
+    encabezados = ["Mesa", "Estado", "Ejemplar\n(Testigo)", "Ejemplar\n(Registr.)"]
     for col in cols:
         et = etiqueta_columna(col)
         encabezados += [f"{et}\n(Testigo)", f"{et}\n(Registr.)", "Δ"]
@@ -81,9 +81,15 @@ def generar_excel(comparaciones, salida):
         est.fill = PatternFill("solid", start_color=est_bg)
         est.font = Font(bold=True, name="Arial", size=9)
         est.alignment = Alignment(horizontal="center")
+        # ejemplar (de qué copia salió cada dato)
+        for off, val in ((0, comp.tipo_testigo), (1, comp.tipo_registraduria)):
+            ce = ws2.cell(fila, 3 + off, etiqueta_tipo_acta(val) if val else "—")
+            ce.alignment = Alignment(horizontal="center")
+            ce.font = Font(name="Arial", size=9)
+            ce.border = _borde()
         # mapa columna -> diferencia
         dmap = {d.columna: d for d in comp.diferencias}
-        j = 3
+        j = 5
         for col in cols:
             dc = dmap[col]
             vt, vr, d, coincide = dc.valor_testigo, dc.valor_registraduria, dc.diferencia, dc.coincide
@@ -100,8 +106,10 @@ def generar_excel(comparaciones, salida):
                 c_d.font = Font(bold=True, name="Arial", size=9, color="9C0006")
             j += 3
         fila += 1
-    ws2.freeze_panes = "C2"
+    ws2.freeze_panes = "E2"
     ws2.column_dimensions["A"].width = 18
+    ws2.column_dimensions["C"].width = 12
+    ws2.column_dimensions["D"].width = 12
 
     # ── Hoja Discrepancias (solo lo que no cuadra) ──
     ws3 = wb.create_sheet("Discrepancias")
@@ -157,7 +165,9 @@ def main():
     print("-" * 60)
     for comp in comparaciones:
         if comp.estado == "DISCREPANCIA":
-            print(f"  Mesa {comp.codigo_mesa}: DISCREPANCIA")
+            print(f"  Mesa {comp.codigo_mesa}: DISCREPANCIA  "
+                  f"(testigo={etiqueta_tipo_acta(comp.tipo_testigo)}, "
+                  f"oficial={etiqueta_tipo_acta(comp.tipo_registraduria)})")
             for d in comp.celdas_discrepantes:
                 print(f"     - {d.etiqueta}: testigo={d.valor_testigo} "
                       f"registraduría={d.valor_registraduria} (Δ {d.diferencia})")

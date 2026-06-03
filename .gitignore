@@ -12,5 +12,10 @@ __pycache__/
 debug/
 salidas/
 
+# Actas reales de entrada (no subir datos; sí conservar las carpetas)
+datos/**/*.pdf
+datos/**/*.jpg
+datos/**/*.png
+
 # Sistema
 .DS_Store

@@ -37,6 +37,41 @@ CATEGORIAS_NO_CANDIDATO = ["blanco", "nulos", "no_marcados"]
 FUENTE_TESTIGO = "testigo"
 FUENTE_REGISTRADURIA = "registraduria"
 
+# ─── TIPO DE EJEMPLAR DEL E-14 (de qué COPIA se tomó el dato) ──────────────────
+# El E-14 se imprime en varias copias con la MISMA información pero distinto
+# destinatario. Saber de cuál salió cada dato es clave para auditar: si la copia
+# de claveros y la de delegados de la misma mesa no coinciden, ya es una alerta.
+TIPO_CLAVEROS = "claveros"        # ejemplar que va al arca triclave (claveros)
+TIPO_DELEGADOS = "delegados"      # ejemplar de los delegados de la Registraduría
+TIPO_TRANSMISION = "transmision"  # ejemplar usado para el pre-conteo / transmisión
+TIPO_DESCONOCIDO = "desconocido"  # no se pudo determinar
+
+TIPOS_ACTA: dict[str, str] = {
+    TIPO_CLAVEROS:    "Claveros",
+    TIPO_DELEGADOS:   "Delegados",
+    TIPO_TRANSMISION: "Transmisión",
+    TIPO_DESCONOCIDO: "Desconocido",
+}
+
+
+def normalizar_tipo_acta(valor: str | None) -> str:
+    """Lleva texto libre ('CLAVEROS', 'delegado', etc.) a un tipo canónico."""
+    t = (valor or "").strip().lower()
+    if not t:
+        return TIPO_DESCONOCIDO
+    if "clav" in t:
+        return TIPO_CLAVEROS
+    if "deleg" in t:
+        return TIPO_DELEGADOS
+    if "transm" in t or "pre" in t:
+        return TIPO_TRANSMISION
+    return TIPO_DESCONOCIDO
+
+
+def etiqueta_tipo_acta(valor: str | None) -> str:
+    """Nombre legible del tipo de ejemplar."""
+    return TIPOS_ACTA.get(normalizar_tipo_acta(valor), TIPOS_ACTA[TIPO_DESCONOCIDO])
+
 
 def columnas_voto() -> list[str]:
     """Orden canónico de las columnas de votos (candidatos + categorías)."""
@@ -50,6 +85,9 @@ class ActaE14:
     # ── Identificación de la mesa (clave para comparar) ──
     codigo_mesa: str                 # identificador único de mesa (ej. "88-128-15-85-001")
     fuente: str                      # FUENTE_TESTIGO o FUENTE_REGISTRADURIA
+
+    # ── Origen del dato (de qué COPIA del E-14 se tomó) ──
+    tipo_acta: str | None = None     # claveros | delegados | transmision | desconocido
 
     # ── Metadatos (informativos) ──
     departamento: str | None = None

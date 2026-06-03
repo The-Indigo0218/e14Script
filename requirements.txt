@@ -1,5 +1,5 @@
-opencv-python-headless==4.13.0.88
+opencv-python-headless==4.13.0.92
 PyMuPDF==1.27.2.3
 numpy==2.4.6
 openpyxl==3.1.5
-requests==2.32.3
+requests==2.34.2

@@ -50,6 +50,8 @@ class ComparacionMesa:
     presente_testigo: bool
     presente_registraduria: bool
     diferencias: list[DiferenciaCelda]
+    tipo_testigo: str | None = None        # de qué copia salió el dato del testigo
+    tipo_registraduria: str | None = None  # de qué copia salió el dato oficial
 
     @property
     def estado(self) -> str:
@@ -86,6 +88,8 @@ def comparar_mesa(codigo: str, fila_t: dict | None, fila_r: dict | None) -> Comp
         presente_testigo=fila_t is not None,
         presente_registraduria=fila_r is not None,
         diferencias=diffs,
+        tipo_testigo=_valor(fila_t, "tipo_acta"),
+        tipo_registraduria=_valor(fila_r, "tipo_acta"),
     )
 
 
