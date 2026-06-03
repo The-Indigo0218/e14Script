@@ -22,10 +22,12 @@ from pathlib import Path
 
 from e14.almacen import Almacen
 from e14.modelo import (ActaE14, FUENTE_TESTIGO, columnas_voto,
-                        normalizar_tipo_acta, etiqueta_tipo_acta)
+                        normalizar_tipo_acta, etiqueta_tipo_acta, serializar_copias,
+                        parsear_copias)
 from e14.alineacion import Alineador
 from e14.ocr import backend_por_defecto
-from e14.lectura import leer_acta_pdf, listar_pdfs
+from e14.lectura import leer_acta_pdf, listar_documentos, imprimir_trazabilidad
+from e14.evidencia import validar_lectura_vs_evidencia
 from cli_args import parsear_args
 
 PLANTILLA = "plantillas/muestra-formulario-e-14.pdf"
@@ -53,8 +55,17 @@ def cargar_csv(ruta_csv: str, db: str, tipo: str | None) -> int:
                 continue
             # El tipo por fila del CSV manda; si no viene, usa el --tipo global.
             tipo_fila = (fila.get("tipo_acta") or "").strip() or tipo
-            acta = ActaE14(codigo_mesa=codigo, fuente=FUENTE_TESTIGO, archivo_origen=ruta_csv,
-                           tipo_acta=normalizar_tipo_acta(tipo_fila))
+            copias_fila = (fila.get("copias_en_evidencia") or "").strip()
+            copias = parsear_copias(copias_fila) if copias_fila else []
+            acta = ActaE14(
+                codigo_mesa=codigo, fuente=FUENTE_TESTIGO, archivo_origen=ruta_csv,
+                tipo_acta=normalizar_tipo_acta(tipo_fila),
+                copias_en_evidencia=serializar_copias(copias) or None,
+            )
+            ok, nota = validar_lectura_vs_evidencia(acta.tipo_acta, copias)
+            if not ok:
+                acta.necesita_revision = True
+                acta.notas = nota
             for meta in ("departamento", "municipio", "zona", "puesto", "mesa"):
                 v = (fila.get(meta) or "").strip()
                 if v:
@@ -76,9 +87,9 @@ def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None) ->
     if not Path(PLANTILLA).exists():
         print(f"❌ Falta la plantilla oficial: {PLANTILLA}")
         sys.exit(1)
-    pdfs = listar_pdfs(entrada)
+    pdfs = listar_documentos(entrada)
     if not pdfs:
-        print(f"❌ No se encontraron PDFs en {entrada}")
+        print(f"❌ No se encontraron PDF/imágenes en {entrada}")
         sys.exit(1)
     print(f"Plantilla: {PLANTILLA}")
     print(f"Tipo de ejemplar: {etiqueta_tipo_acta(tipo)}")
@@ -92,8 +103,8 @@ def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None) ->
         alm.guardar(acta)
         estado = "REVISAR" if acta.necesita_revision else "OK"
         conf = f"{acta.confianza:.0%}" if acta.confianza is not None else "—"
-        print(f"  {pdf.name}: mesa={acta.codigo_mesa}  ejemplar={etiqueta_tipo_acta(acta.tipo_acta)}"
-              f"  confianza={conf}  -> {estado}")
+        print(f"  {pdf.name}: mesa={acta.codigo_mesa}  confianza={conf}  -> {estado}")
+        imprimir_trazabilidad(acta)
         if acta.notas:
             print(f"      notas: {acta.notas}")
     alm.cerrar()

@@ -148,3 +148,7 @@ class Alineador:
     def alinear_pdf(self, scan_pdf: str | Path) -> list[ResultadoAlineacion]:
         paginas = render_pdf_gris(scan_pdf, dpi=self.dpi)
         return [self.alinear_pagina(g, i + 1) for i, g in enumerate(paginas)]
+
+    def alinear_paginas(self, paginas_gris: list[np.ndarray]) -> list[ResultadoAlineacion]:
+        """Alinea páginas ya cargadas (PDF o imagen JPG/PNG)."""
+        return [self.alinear_pagina(g, i + 1) for i, g in enumerate(paginas_gris)]

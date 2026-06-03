@@ -5,7 +5,8 @@ electoral), pasarlas a una tabla común y **comparar** para detectar discrepanci
 Todo lo dudoso (confianza < 80%, suma que no cuadra o fuentes que difieren) se
 **marca para revisión humana**.
 
-> 📄 Lee primero `VISION_Y_DECISIONES.md` (el porqué) y `PLAN_PASO_A_PASO.md` (el cómo).
+> 📄 Lee primero `VISION_Y_DECISIONES.md` (el porqué), `PLAN_PASO_A_PASO.md` (el cómo) y
+> **`GUIA_ARCHIVOS.md`** (qué hace cada archivo del repo).
 
 ## Estado
 
@@ -111,8 +112,13 @@ python leer_registraduria.py datos/registraduria actas.db --tipo delegados
 # O por fila, con la columna 'tipo_acta' en el CSV de testigos (manda sobre --tipo)
 ```
 
-El Excel de comparación muestra dos columnas, **Ejemplar (Testigo)** y **Ejemplar
-(Registr.)**, para que en cada mesa quede registrado de dónde vino cada cifra.
+Al procesar, el sistema **detecta en la foto/PDF** si aparecen 1, 2 o 3 copias
+(Claveros, Delegados, Transmisión) y lo imprime en consola. Los votos se guardan
+indicando **de cuál copia se leyeron** (`--tipo` o columna `tipo_acta`).
+
+El Excel incluye hoja **Trazabilidad E-14** y columnas *Copias en evidencia* /
+*Votos leídos desde* por cada fuente. Si la foto del testigo trae varias copias,
+se marca alerta para revisar si los números coinciden entre ellas.
 
 ## Criterios de revisión manual
 

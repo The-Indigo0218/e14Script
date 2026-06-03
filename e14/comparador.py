@@ -10,7 +10,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from e14.modelo import CANDIDATOS, CATEGORIAS_NO_CANDIDATO, columnas_voto
+from e14.modelo import (
+    CANDIDATOS,
+    CATEGORIAS_NO_CANDIDATO,
+    columnas_voto,
+    resumen_trazabilidad_e14,
+    FUENTE_TESTIGO,
+    FUENTE_REGISTRADURIA,
+)
 
 
 def etiqueta_columna(col: str) -> str:
@@ -50,8 +57,26 @@ class ComparacionMesa:
     presente_testigo: bool
     presente_registraduria: bool
     diferencias: list[DiferenciaCelda]
-    tipo_testigo: str | None = None        # de qué copia salió el dato del testigo
-    tipo_registraduria: str | None = None  # de qué copia salió el dato oficial
+    tipo_testigo: str | None = None
+    copias_testigo: str | None = None       # copias visibles en evidencia jurados
+    tipo_registraduria: str | None = None
+    copias_registraduria: str | None = None
+
+    @property
+    def trazabilidad_testigo(self) -> str:
+        return resumen_trazabilidad_e14(
+            FUENTE_TESTIGO, self.copias_testigo, self.tipo_testigo)
+
+    @property
+    def trazabilidad_registraduria(self) -> str:
+        return resumen_trazabilidad_e14(
+            FUENTE_REGISTRADURIA, self.copias_registraduria, self.tipo_registraduria)
+
+    @property
+    def alerta_copias_en_foto(self) -> bool:
+        """Hay 2+ copias en evidencia del testigo → conviene revisar si coinciden."""
+        from e14.modelo import parsear_copias
+        return len(parsear_copias(self.copias_testigo)) >= 2
 
     @property
     def estado(self) -> str:
@@ -89,7 +114,9 @@ def comparar_mesa(codigo: str, fila_t: dict | None, fila_r: dict | None) -> Comp
         presente_registraduria=fila_r is not None,
         diferencias=diffs,
         tipo_testigo=_valor(fila_t, "tipo_acta"),
+        copias_testigo=_valor(fila_t, "copias_en_evidencia"),
         tipo_registraduria=_valor(fila_r, "tipo_acta"),
+        copias_registraduria=_valor(fila_r, "copias_en_evidencia"),
     )
 
 

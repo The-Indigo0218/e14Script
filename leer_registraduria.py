@@ -21,7 +21,7 @@ from e14.almacen import Almacen
 from e14.modelo import FUENTE_REGISTRADURIA, TIPO_DELEGADOS, etiqueta_tipo_acta
 from e14.alineacion import Alineador
 from e14.ocr import backend_por_defecto
-from e14.lectura import leer_acta_pdf, listar_pdfs
+from e14.lectura import leer_acta_pdf, listar_documentos, imprimir_trazabilidad
 from cli_args import parsear_args
 
 PLANTILLA = "plantillas/muestra-formulario-e-14.pdf"
@@ -38,9 +38,9 @@ def main():
         print(f"❌ No existe: {entrada}")
         sys.exit(1)
 
-    pdfs = listar_pdfs(entrada)
+    pdfs = listar_documentos(entrada)
     if not pdfs:
-        print(f"❌ No se encontraron PDFs en {entrada}")
+        print(f"❌ No se encontraron PDF/imágenes en {entrada}")
         sys.exit(1)
 
     print(f"Plantilla: {PLANTILLA}")
@@ -56,8 +56,8 @@ def main():
         alm.guardar(acta)
         estado = "REVISAR" if acta.necesita_revision else "OK"
         conf = f"{acta.confianza:.0%}" if acta.confianza is not None else "—"
-        print(f"  {pdf.name}: mesa={acta.codigo_mesa}  ejemplar={etiqueta_tipo_acta(acta.tipo_acta)}"
-              f"  confianza={conf}  -> {estado}")
+        print(f"  {pdf.name}: mesa={acta.codigo_mesa}  confianza={conf}  -> {estado}")
+        imprimir_trazabilidad(acta)
         if acta.notas:
             print(f"      notas: {acta.notas}")
     alm.cerrar()

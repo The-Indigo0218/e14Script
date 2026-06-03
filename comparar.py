@@ -17,7 +17,13 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from e14.almacen import Almacen
-from e14.modelo import FUENTE_TESTIGO, FUENTE_REGISTRADURIA, columnas_voto, etiqueta_tipo_acta
+from e14.modelo import (
+    FUENTE_TESTIGO,
+    FUENTE_REGISTRADURIA,
+    columnas_voto,
+    etiqueta_tipo_acta,
+    copias_a_texto,
+)
 from e14.comparador import comparar, resumen, etiqueta_columna
 
 VERDE = "C6EFCE"
@@ -65,7 +71,11 @@ def generar_excel(comparaciones, salida):
     # ── Hoja Comparación (todas las columnas, testigo | reg | dif) ──
     ws2 = wb.create_sheet("Comparación")
     cols = columnas_voto()
-    encabezados = ["Mesa", "Estado", "Ejemplar\n(Testigo)", "Ejemplar\n(Registr.)"]
+    encabezados = [
+        "Mesa", "Estado",
+        "Copias en evidencia\n(Testigo)", "Votos leídos desde\n(Testigo)",
+        "Copias en evidencia\n(Registr.)", "Votos leídos desde\n(Registr.)",
+    ]
     for col in cols:
         et = etiqueta_columna(col)
         encabezados += [f"{et}\n(Testigo)", f"{et}\n(Registr.)", "Δ"]
@@ -81,15 +91,21 @@ def generar_excel(comparaciones, salida):
         est.fill = PatternFill("solid", start_color=est_bg)
         est.font = Font(bold=True, name="Arial", size=9)
         est.alignment = Alignment(horizontal="center")
-        # ejemplar (de qué copia salió cada dato)
-        for off, val in ((0, comp.tipo_testigo), (1, comp.tipo_registraduria)):
-            ce = ws2.cell(fila, 3 + off, etiqueta_tipo_acta(val) if val else "—")
-            ce.alignment = Alignment(horizontal="center")
+        celdas_traz = [
+            copias_a_texto(comp.copias_testigo),
+            etiqueta_tipo_acta(comp.tipo_testigo),
+            copias_a_texto(comp.copias_registraduria),
+            etiqueta_tipo_acta(comp.tipo_registraduria),
+        ]
+        for off, texto in enumerate(celdas_traz):
+            ce = ws2.cell(fila, 3 + off, texto)
+            ce.alignment = Alignment(horizontal="center", wrap_text=True)
             ce.font = Font(name="Arial", size=9)
             ce.border = _borde()
-        # mapa columna -> diferencia
+            if off in (0, 2) and "+" in texto:
+                ce.fill = PatternFill("solid", start_color=AMARILLO)
         dmap = {d.columna: d for d in comp.diferencias}
-        j = 5
+        j = 7
         for col in cols:
             dc = dmap[col]
             vt, vr, d, coincide = dc.valor_testigo, dc.valor_registraduria, dc.diferencia, dc.coincide
@@ -106,10 +122,37 @@ def generar_excel(comparaciones, salida):
                 c_d.font = Font(bold=True, name="Arial", size=9, color="9C0006")
             j += 3
         fila += 1
-    ws2.freeze_panes = "E2"
+    ws2.freeze_panes = "G2"
     ws2.column_dimensions["A"].width = 18
-    ws2.column_dimensions["C"].width = 12
-    ws2.column_dimensions["D"].width = 12
+    for col in "CDEF":
+        ws2.column_dimensions[col].width = 16
+
+    # ── Hoja Trazabilidad (resumen legible por mesa) ──
+    ws_t = wb.create_sheet("Trazabilidad E-14")
+    for j, h in enumerate(
+        ["Mesa", "Evidencia y lectura (testigo)", "Evidencia y lectura (oficial)", "Alerta"], 1
+    ):
+        _h(ws_t.cell(1, j), h)
+    fila_t = 2
+    for comp in comparaciones:
+        alerta = ""
+        if comp.alerta_copias_en_foto:
+            alerta = "Varias copias en foto del testigo: revisar si los números coinciden"
+        ws_t.cell(fila_t, 1, comp.codigo_mesa)
+        ws_t.cell(fila_t, 2, comp.trazabilidad_testigo)
+        ws_t.cell(fila_t, 3, comp.trazabilidad_registraduria)
+        ws_t.cell(fila_t, 4, alerta)
+        for j in range(1, 5):
+            c = ws_t.cell(fila_t, j)
+            c.font = Font(name="Arial", size=10)
+            c.border = _borde()
+            if j == 4 and alerta:
+                c.fill = PatternFill("solid", start_color=AMARILLO)
+        fila_t += 1
+    ws_t.column_dimensions["A"].width = 18
+    ws_t.column_dimensions["B"].width = 48
+    ws_t.column_dimensions["C"].width = 48
+    ws_t.column_dimensions["D"].width = 36
 
     # ── Hoja Discrepancias (solo lo que no cuadra) ──
     ws3 = wb.create_sheet("Discrepancias")
@@ -164,10 +207,13 @@ def main():
     print(f"  ⚠️  Falta fuente   : {r['FALTA_FUENTE']}")
     print("-" * 60)
     for comp in comparaciones:
+        print(f"  Mesa {comp.codigo_mesa}:")
+        print(f"      Jurados → {comp.trazabilidad_testigo}")
+        print(f"      Oficial → {comp.trazabilidad_registraduria}")
+        if comp.alerta_copias_en_foto:
+            print("      ⚠️  La evidencia del testigo muestra VARIAS copias del E-14 en la misma foto.")
         if comp.estado == "DISCREPANCIA":
-            print(f"  Mesa {comp.codigo_mesa}: DISCREPANCIA  "
-                  f"(testigo={etiqueta_tipo_acta(comp.tipo_testigo)}, "
-                  f"oficial={etiqueta_tipo_acta(comp.tipo_registraduria)})")
+            print(f"      ⛔ DISCREPANCIA en votos")
             for d in comp.celdas_discrepantes:
                 print(f"     - {d.etiqueta}: testigo={d.valor_testigo} "
                       f"registraduría={d.valor_registraduria} (Δ {d.diferencia})")

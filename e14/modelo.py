@@ -73,6 +73,56 @@ def etiqueta_tipo_acta(valor: str | None) -> str:
     return TIPOS_ACTA.get(normalizar_tipo_acta(valor), TIPOS_ACTA[TIPO_DESCONOCIDO])
 
 
+def parsear_copias(raw: str | list[str] | None) -> list[str]:
+    """Convierte 'claveros,delegados' o lista a tipos canónicos ordenados."""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        items = raw
+    else:
+        items = [x.strip() for x in str(raw).split(",") if x.strip()]
+    orden = [TIPO_CLAVEROS, TIPO_DELEGADOS, TIPO_TRANSMISION]
+    vistos = {normalizar_tipo_acta(x) for x in items}
+    vistos.discard(TIPO_DESCONOCIDO)
+    return [c for c in orden if c in vistos]
+
+
+def serializar_copias(copias: list[str] | str | None) -> str:
+    """Guarda en DB como 'claveros,delegados'."""
+    return ",".join(parsear_copias(copias))
+
+
+def copias_a_texto(copias: list[str] | str | None) -> str:
+    """Texto legible: 'Claveros + Delegados' o '—'."""
+    lista = parsear_copias(copias)
+    if not lista:
+        return "—"
+    return " + ".join(etiqueta_tipo_acta(c) for c in lista)
+
+
+def resumen_trazabilidad_e14(
+    fuente: str,
+    copias_en_evidencia: list[str] | str | None,
+    copia_lectura: str | None,
+) -> str:
+    """
+    Resumen para consola/Excel: qué hay en la foto y de dónde salieron los votos.
+    """
+    quien = "evidencia jurados" if fuente == FUENTE_TESTIGO else "acta oficial"
+    visibles = parsear_copias(copias_en_evidencia)
+    leida = etiqueta_tipo_acta(copia_lectura)
+    if visibles:
+        n = len(visibles)
+        bloque = copias_a_texto(visibles)
+        if n >= 2:
+            linea_ev = f"En la {quien} aparecen {n} copias: {bloque}"
+        else:
+            linea_ev = f"En la {quien} aparece copia: {bloque}"
+    else:
+        linea_ev = f"Copias en la {quien}: no detectadas"
+    return f"{linea_ev} | Votos leídos desde: {leida}"
+
+
 def columnas_voto() -> list[str]:
     """Orden canónico de las columnas de votos (candidatos + categorías)."""
     return [f"c{n}" for n in range(1, 14)] + list(CATEGORIAS_NO_CANDIDATO)
@@ -86,8 +136,9 @@ class ActaE14:
     codigo_mesa: str                 # identificador único de mesa (ej. "88-128-15-85-001")
     fuente: str                      # FUENTE_TESTIGO o FUENTE_REGISTRADURIA
 
-    # ── Origen del dato (de qué COPIA del E-14 se tomó) ──
-    tipo_acta: str | None = None     # claveros | delegados | transmision | desconocido
+    # ── Ejemplares del E-14 (trazabilidad jurados / auditoría) ──
+    tipo_acta: str | None = None              # copia DE LA QUE se leyeron los votos
+    copias_en_evidencia: str | None = None    # copias VISIBLES en foto/PDF ("claveros,delegados")
 
     # ── Metadatos (informativos) ──
     departamento: str | None = None

@@ -1,2 +1,2 @@
-codigo_mesa,tipo_acta,departamento,municipio,zona,puesto,mesa,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,blanco,nulos,no_marcados,suma_total
-88-128-15-85-001,claveros,EXTERIOR,FRANKFURT,15,85,001,106,6,0,88,1,0,0,0,0,0,35,45,0,2,0,0,283
+codigo_mesa,tipo_acta,copias_en_evidencia,departamento,municipio,zona,puesto,mesa,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,blanco,nulos,no_marcados,suma_total
+88-128-15-85-001,claveros,"claveros,delegados",EXTERIOR,FRANKFURT,15,85,001,106,6,0,88,1,0,0,0,0,0,35,45,0,2,0,0,283

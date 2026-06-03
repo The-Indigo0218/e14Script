@@ -16,7 +16,7 @@ from pathlib import Path
 from e14.modelo import ActaE14, columnas_voto
 
 _COLUMNAS_META = [
-    "codigo_mesa", "fuente", "tipo_acta",
+    "codigo_mesa", "fuente", "tipo_acta", "copias_en_evidencia",
     "departamento", "municipio", "zona", "puesto", "mesa",
 ]
 _COLUMNAS_TOTALES = ["suma_total", "total_votos_urna", "total_votantes_e11"]
@@ -31,12 +31,22 @@ class Almacen:
         self.con = sqlite3.connect(self.ruta)
         self.con.row_factory = sqlite3.Row
         self._crear_tabla()
+        self._migrar_columnas()
+
+    def _migrar_columnas(self) -> None:
+        """Añade columnas nuevas en bases de datos ya existentes."""
+        cur = self.con.execute("PRAGMA table_info(actas)")
+        existentes = {row[1] for row in cur.fetchall()}
+        if "copias_en_evidencia" not in existentes:
+            self.con.execute("ALTER TABLE actas ADD COLUMN copias_en_evidencia TEXT")
+            self.con.commit()
 
     def _crear_tabla(self) -> None:
         cols_def = []
         for c in _TODAS:
-            if c in ("codigo_mesa", "fuente", "tipo_acta", "departamento", "municipio",
-                     "zona", "puesto", "mesa", "archivo_origen", "notas"):
+            if c in ("codigo_mesa", "fuente", "tipo_acta", "copias_en_evidencia",
+                     "departamento", "municipio", "zona", "puesto", "mesa",
+                     "archivo_origen", "notas"):
                 tipo = "TEXT"
             elif c == "confianza":
                 tipo = "REAL"
