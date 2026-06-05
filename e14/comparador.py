@@ -78,13 +78,36 @@ class ComparacionMesa:
         from e14.modelo import parsear_copias
         return len(parsear_copias(self.copias_testigo)) >= 2
 
+    def _tiene_votos(self, fuente: str) -> bool:
+        if fuente == "testigo":
+            return any(d.valor_testigo is not None for d in self.diferencias)
+        return any(d.valor_registraduria is not None for d in self.diferencias)
+
     @property
     def estado(self) -> str:
         if not (self.presente_testigo and self.presente_registraduria):
             return "FALTA_FUENTE"
-        if all(d.coincide for d in self.diferencias):
-            return "COINCIDE"
-        return "DISCREPANCIA"
+        tiene_t = self._tiene_votos("testigo")
+        tiene_r = self._tiene_votos("registraduria")
+        if not tiene_t and not tiene_r:
+            return "SIN_LECTURA"
+        if not tiene_t or not tiene_r:
+            return "LECTURA_INCOMPLETA"
+        comparables = [
+            d for d in self.diferencias
+            if d.valor_testigo is not None and d.valor_registraduria is not None
+        ]
+        if not comparables:
+            return "LECTURA_INCOMPLETA"
+        if any(not d.coincide for d in comparables):
+            return "DISCREPANCIA"
+        # Algún voto solo en un lado (el otro null) → no es coincidencia real
+        if any(
+            (d.valor_testigo is None) != (d.valor_registraduria is None)
+            for d in self.diferencias
+        ):
+            return "LECTURA_INCOMPLETA"
+        return "COINCIDE"
 
     @property
     def celdas_discrepantes(self) -> list[DiferenciaCelda]:
@@ -127,7 +150,14 @@ def comparar(testigo: dict[str, dict], registraduria: dict[str, dict]) -> list[C
 
 
 def resumen(comparaciones: list[ComparacionMesa]) -> dict[str, int]:
-    r = {"total": len(comparaciones), "COINCIDE": 0, "DISCREPANCIA": 0, "FALTA_FUENTE": 0}
+    r = {
+        "total": len(comparaciones),
+        "COINCIDE": 0,
+        "DISCREPANCIA": 0,
+        "FALTA_FUENTE": 0,
+        "SIN_LECTURA": 0,
+        "LECTURA_INCOMPLETA": 0,
+    }
     for c in comparaciones:
         r[c.estado] += 1
     return r

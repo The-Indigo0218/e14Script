@@ -26,6 +26,7 @@ from e14.modelo import (
     copias_a_texto,
 )
 from e14.comparador import comparar, resumen, etiqueta_columna
+from e14.informe import imprimir_contenido_acta
 
 VERDE = "C6EFCE"
 ROJO = "FFC7CE"
@@ -62,6 +63,8 @@ def generar_excel(comparaciones, salida):
         ("✅ Coinciden", r["COINCIDE"]),
         ("⛔ Con discrepancia", r["DISCREPANCIA"]),
         ("⚠️ Falta una fuente", r["FALTA_FUENTE"]),
+        ("⏳ Sin lectura OCR", r["SIN_LECTURA"]),
+        ("📋 Lectura incompleta", r["LECTURA_INCOMPLETA"]),
     ]
     for i, (etq, val) in enumerate(filas, start=3):
         ws.cell(i, 1, etq).font = Font(bold=True, name="Arial", size=10)
@@ -88,7 +91,13 @@ def generar_excel(comparaciones, salida):
     for comp in comparaciones:
         ws2.cell(fila, 1, comp.codigo_mesa).font = Font(bold=True, name="Arial", size=9)
         est = ws2.cell(fila, 2, comp.estado)
-        est_bg = {"COINCIDE": VERDE, "DISCREPANCIA": ROJO, "FALTA_FUENTE": AMARILLO}[comp.estado]
+        est_bg = {
+            "COINCIDE": VERDE,
+            "DISCREPANCIA": ROJO,
+            "FALTA_FUENTE": AMARILLO,
+            "SIN_LECTURA": AMARILLO,
+            "LECTURA_INCOMPLETA": AMARILLO,
+        }.get(comp.estado, GRIS)
         est.fill = PatternFill("solid", start_color=est_bg)
         est.font = Font(bold=True, name="Arial", size=9)
         est.alignment = Alignment(horizontal="center")
@@ -218,6 +227,8 @@ def main():
     print(f"  ✅ Coinciden      : {r['COINCIDE']}")
     print(f"  ⛔ Discrepancia   : {r['DISCREPANCIA']}")
     print(f"  ⚠️  Falta fuente   : {r['FALTA_FUENTE']}")
+    print(f"  ⏳ Sin lectura    : {r['SIN_LECTURA']}")
+    print(f"  📋 Incompleta     : {r['LECTURA_INCOMPLETA']}")
     print("-" * 60)
     for comp in comparaciones:
         print(f"  Mesa {comp.codigo_mesa}:")
@@ -230,9 +241,25 @@ def main():
             for d in comp.celdas_discrepantes:
                 print(f"     - {d.etiqueta}: testigo={d.valor_testigo} "
                       f"registraduría={d.valor_registraduria} (Δ {d.diferencia})")
+        elif comp.estado == "SIN_LECTURA":
+            print("      ⏳ SIN LECTURA — ningún voto en testigo ni oficial (OCR falló o no corrió)")
+        elif comp.estado == "LECTURA_INCOMPLETA":
+            print("      📋 LECTURA INCOMPLETA — solo una fuente tiene votos o faltan columnas")
         elif comp.estado == "FALTA_FUENTE":
             falta = "registraduría" if comp.presente_testigo else "testigo"
-            print(f"  Mesa {comp.codigo_mesa}: falta fuente '{falta}'")
+            print(f"      ⚠️  Falta fuente '{falta}' — aún no se puede comparar votos")
+            if comp.presente_registraduria and not comp.presente_testigo:
+                fila_r = registraduria.get(comp.codigo_mesa)
+                if fila_r:
+                    imprimir_contenido_acta(
+                        fila_r, titulo=f"OFICIAL en base (esperando testigo) — {comp.codigo_mesa}",
+                    )
+            elif comp.presente_testigo and not comp.presente_registraduria:
+                fila_t = testigo.get(comp.codigo_mesa)
+                if fila_t:
+                    imprimir_contenido_acta(
+                        fila_t, titulo=f"TESTIGO en base (esperando oficial) — {comp.codigo_mesa}",
+                    )
 
     generar_excel(comparaciones, salida)
     print("-" * 60)

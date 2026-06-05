@@ -26,6 +26,7 @@ from e14.modelo import (ActaE14, FUENTE_TESTIGO, columnas_voto,
                         parsear_copias)
 from e14.alineacion import Alineador
 from e14.ocr import backend_por_defecto
+from e14.informe import imprimir_contenido_acta, imprimir_siguiente_paso_testigo
 from e14.lectura import leer_acta_pdf, listar_documentos, imprimir_trazabilidad
 from e14.evidencia import validar_lectura_vs_evidencia
 from cli_args import parsear_args
@@ -113,6 +114,9 @@ def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None,
         imprimir_trazabilidad(acta)
         if acta.notas:
             print(f"      notas: {acta.notas}")
+        imprimir_contenido_acta(acta)
+        if len(pdfs) == 1:
+            imprimir_siguiente_paso_testigo(acta.codigo_mesa)
     alm.cerrar()
     if ocr.nombre == "manual":
         print("   ⚠️  OCR en modo manual: define GEMINI_API_KEY en .env para leer de verdad.")

@@ -21,6 +21,7 @@ from e14.almacen import Almacen
 from e14.modelo import FUENTE_REGISTRADURIA, TIPO_DELEGADOS, etiqueta_tipo_acta
 from e14.alineacion import Alineador
 from e14.ocr import backend_por_defecto
+from e14.informe import imprimir_contenido_acta, imprimir_siguiente_paso_registraduria
 from e14.lectura import leer_acta_pdf, listar_documentos, imprimir_trazabilidad
 from cli_args import parsear_args
 
@@ -66,8 +67,11 @@ def main():
         imprimir_trazabilidad(acta)
         if acta.notas:
             print(f"      notas: {acta.notas}")
+        imprimir_contenido_acta(acta)
+        if len(pdfs) == 1:
+            imprimir_siguiente_paso_registraduria(acta.codigo_mesa)
     alm.cerrar()
-    print(f"\n✅ Procesados {len(pdfs)} PDF(s) en {db} (fuente='registraduria').")
+    print(f"✅ Procesados {len(pdfs)} PDF(s) en {db} (fuente='registraduria').")
     if ocr.nombre == "manual":
         print("   ⚠️  OCR en modo manual: define GEMINI_API_KEY en .env para leer de verdad.")
 

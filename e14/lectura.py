@@ -11,6 +11,7 @@ los votos (`tipo_acta`).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import cv2
@@ -43,7 +44,12 @@ def leer_acta_pdf(pdf_path: str, alineador: Alineador, ocr, fuente: str,
     """Lee un E-14 (PDF o foto) y devuelve un ActaE14 con trazabilidad de ejemplares."""
     codigo = codigo_mesa or codigo_mesa_desde_archivo(pdf_path)
     meta = zona_puesto_mesa_desde_codigo(codigo)
-    copias_visibles, nota_det = detectar_copias_en_evidencia(pdf_path, fuente=fuente)
+    usar_gemini_copias = os.environ.get("OCR_DETECTAR_COPIAS_GEMINI", "").lower() in (
+        "1", "true", "yes",
+    )
+    copias_visibles, nota_det = detectar_copias_en_evidencia(
+        pdf_path, usar_gemini=usar_gemini_copias, fuente=fuente,
+    )
     copia_leida = normalizar_tipo_acta(tipo_acta)
 
     # Si hay una sola copia visible y no indicaron --tipo, usar esa.

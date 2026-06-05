@@ -79,23 +79,29 @@ datos/registraduria/21_01_13_registraduria.pdf  ← PDF oficial (3 páginas, cop
 
 El comparador cruza por ese mismo `codigo_mesa`. Ver `e14/mesa.py`.
 
-### 5. Correr el flujo completo (modo prueba barato)
+### 5. Flujo recomendado: primero oficial, luego testigo
 
-`--solo-pagina-1` procesa **solo candidatos 1–7** (1 llamada OCR por acta). Ideal para
-validar el pipeline sin gastar cuota.
+**Orden sugerido** (1 llamada API por script, sin bucles):
 
 ```bash
-# Paso 1 — testigo (copia Claveros en la foto)
+# Paso 1 — SOLO Registraduría (1 llamada OCR)
+python leer_registraduria.py datos/registraduria/21_01_13_registraduria.pdf actas.db \
+  --solo-pagina-1
+# Al terminar imprime tabla de votos leídos y el siguiente comando
+
+# Paso 2 — Ver qué quedó en la base SIN gastar más API
+python ver_acta.py actas.db --fuente registraduria
+
+# Paso 3 — Testigo (otra llamada OCR, cuando tengas cuota)
 python leer_testigos.py datos/testigos/21_01_13_testigo.pdf actas.db \
   --tipo claveros --solo-pagina-1
 
-# Paso 2 — Registraduría (copia Delegados)
-python leer_registraduria.py datos/registraduria/21_01_13_registraduria.pdf actas.db \
-  --solo-pagina-1
-
-# Paso 3 — comparar
+# Paso 4 — Comparar
 python comparar.py actas.db comparacion_21_01_13.xlsx
 ```
+
+`--solo-pagina-1` = solo candidatos 1–7 (más barato). Si solo cargaste la oficial y
+corres `comparar.py`, te muestra el contenido de la Registraduría y avisa que falta el testigo.
 
 ### 6. Resultado esperado (pág. 1, candidatos 1–7)
 
@@ -122,10 +128,21 @@ python comparar.py actas.db comparacion_E14.xlsx
 
 `comparar.py` lista al inicio qué pares existen en ambas carpetas y cuáles faltan.
 
-### 8. Sin clave API (solo probar el flujo)
+### 8. Validación 100% local (sin API, sin cuota)
 
-Sin `GEMINI_API_KEY`, los lectores usan el backend **manual**: alinean el PDF pero dejan
-los votos en `null` y marcan `REVISAR`. Sirve para verificar instalación y capa 1 sin red.
+Para probar instalación y calidad del escaneo **sin gastar Gemini**:
+
+```bash
+# Solo capa 1: alinea, reporta inliers, guarda imagen en debug/
+python validar_alineacion.py datos/registraduria/21_01_13_registraduria.pdf --solo-pagina-1
+python validar_alineacion.py datos/testigos/21_01_13_testigo.pdf --solo-pagina-1
+
+# Ver qué hay en la base (sin re-OCR)
+python ver_acta.py actas.db --fuente registraduria
+```
+
+Sin `GEMINI_API_KEY`, los lectores usan backend **manual**: alinean pero dejan votos en
+`null`. El comparador marca **SIN_LECTURA** (ya no dice “coinciden” en vacío).
 
 ---
 
@@ -224,7 +241,8 @@ El Excel incluye hoja **Trazabilidad E-14** con esas columnas por fuente.
 
 | Síntoma | Causa probable | Qué hacer |
 |---------|----------------|-----------|
-| `HTTP 429` en `probar_api.py` | Cuota Gemini agotada | Esperar; no reintentar en bucle |
+| `HTTP 429` en OCR | Cuota Gemini agotada | Esperar; usar `ver_acta.py` para ver la base sin API |
+| Quiero ver la oficial sin re-OCR | Ya está en `actas.db` | `python ver_acta.py actas.db --fuente registraduria` |
 | Todos los votos `null`, confianza `—` | Sin clave o error API | Revisar `.env`; correr `probar_api.py` |
 | `REVISAR` en c2/c4 con otros OK | Dígitos con puntos (`..3`, `.77`) | Re-correr; el pipeline hace zoom y re-OCR |
 | Nota “2 copias” en PDF oficial alto | Heurística vieja | Actualizado: oficial usa título pág. 1 |

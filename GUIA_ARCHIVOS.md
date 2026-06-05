@@ -23,6 +23,8 @@ auditoria-e14/
 │   ├── leer_registraduria.py     → Paso 2: E-14 oficial (PDF + OCR)
 │   ├── comparar.py               → Paso 3: cruzar y generar Excel
 │   ├── probar_api.py             → Verificar clave Gemini/GPT antes de OCR masivo
+│   ├── ver_acta.py               → Ver actas.db sin re-OCR (sin API)
+│   ├── validar_alineacion.py     → Solo capa 1 local: inliers + debug/
 │   └── cli_args.py               → Flags: --tipo, --codigo, --solo-pagina-1
 │
 ├── 📦 e14/  (motor — no se ejecuta directo)
@@ -34,7 +36,8 @@ auditoria-e14/
 │   ├── ocr.py                    → Capa 2: Gemini / GPT / manual + informe API
 │   ├── evidencia.py              → Detectar copias visibles (Claveros, Delegados…)
 │   ├── lectura.py                → Orquesta evidencia + alineación + OCR → ActaE14
-│   ├── comparador.py             → Capa 3: comparar testigo vs oficial
+│   ├── informe.py                → Tabla legible de votos en consola
+│   ├── comparador.py             → Capa 3: comparar (estados SIN_LECTURA, etc.)
 │   └── __init__.py
 │
 ├── 📁 Entradas
