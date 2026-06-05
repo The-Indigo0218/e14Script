@@ -130,10 +130,14 @@ class Alineador:
         alineada = cv2.warpPerspective(scan_gris, H, (layout.ancho, layout.alto))
         return inliers, alineada
 
-    def alinear_pagina(self, scan_gris: np.ndarray, indice_pagina: int) -> ResultadoAlineacion:
+    def alinear_pagina(self, scan_gris: np.ndarray, indice_pagina: int,
+                       solo_layouts: list[str] | None = None) -> ResultadoAlineacion:
         kp_scan, des_scan = self._sift.detectAndCompute(scan_gris, None)
         mejor = ResultadoAlineacion(indice_pagina, None, 0, False, None)
-        for layout in self._layouts:
+        candidatos = self._layouts
+        if solo_layouts:
+            candidatos = [l for l in self._layouts if l.layout_id in solo_layouts]
+        for layout in candidatos:
             inliers, alineada = self._alinear_contra(kp_scan, des_scan, scan_gris, layout)
             if inliers > mejor.inliers:
                 mejor = ResultadoAlineacion(
@@ -145,10 +149,12 @@ class Alineador:
                 )
         return mejor
 
-    def alinear_pdf(self, scan_pdf: str | Path) -> list[ResultadoAlineacion]:
+    def alinear_pdf(self, scan_pdf: str | Path,
+                    solo_layouts: list[str] | None = None) -> list[ResultadoAlineacion]:
         paginas = render_pdf_gris(scan_pdf, dpi=self.dpi)
-        return [self.alinear_pagina(g, i + 1) for i, g in enumerate(paginas)]
+        return [self.alinear_pagina(g, i + 1, solo_layouts) for i, g in enumerate(paginas)]
 
-    def alinear_paginas(self, paginas_gris: list[np.ndarray]) -> list[ResultadoAlineacion]:
+    def alinear_paginas(self, paginas_gris: list[np.ndarray],
+                        solo_layouts: list[str] | None = None) -> list[ResultadoAlineacion]:
         """Alinea páginas ya cargadas (PDF o imagen JPG/PNG)."""
-        return [self.alinear_pagina(g, i + 1) for i, g in enumerate(paginas_gris)]
+        return [self.alinear_pagina(g, i + 1, solo_layouts) for i, g in enumerate(paginas_gris)]

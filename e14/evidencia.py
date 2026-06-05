@@ -69,8 +69,9 @@ def _heuristica_layout_foto(paginas_gris: list[np.ndarray]) -> list[str]:
         return list(_ORDEN)
     if ratio >= 1.35:
         return [TIPO_CLAVEROS, TIPO_DELEGADOS]
-    # Dos actas apiladas (foto vertical de celular con Claveros + Delegados)
-    if ratio <= 0.82 and h >= 700:
+    # Dos actas apiladas (foto vertical de celular con Claveros + Delegados).
+    # PDF oficial de una sola copia suele ser muy estrecho (ratio < 0.45); no confundir.
+    if 0.45 <= ratio <= 0.82 and h >= 700:
         return [TIPO_CLAVEROS, TIPO_DELEGADOS]
     return []
 
@@ -143,22 +144,47 @@ def detectar_copias_con_gemini(imagen_gris: np.ndarray) -> tuple[list[str], str 
         return [], f"Detección Gemini falló: {e}"
 
 
-def detectar_copias_en_evidencia(ruta: str | Path, usar_gemini: bool = True) -> tuple[list[str], str | None]:
+def _copias_en_primera_pagina_pdf(ruta: Path) -> list[str]:
+    """En PDFs oficiales, el título de la pág. 1 indica el ejemplar (DELEGADOS, etc.)."""
+    try:
+        doc = fitz.open(str(ruta))
+        if doc.page_count == 0:
+            doc.close()
+            return []
+        texto = doc[0].get_text()
+        doc.close()
+        return detectar_copias_en_texto(texto)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def detectar_copias_en_evidencia(ruta: str | Path, usar_gemini: bool = True,
+                                 fuente: str | None = None) -> tuple[list[str], str | None]:
     """
     Detecta qué ejemplares del E-14 aparecen en el archivo de evidencia.
     Devuelve (lista de tipos canónicos, nota opcional del detector).
     """
     ruta = Path(ruta)
-    copias = detectar_copias_en_pdf_texto(ruta) if ruta.suffix.lower() == ".pdf" else []
-    nota: str | None = None
+    es_oficial = fuente == "registraduria"
 
-    if copias:
-        return copias, "Detectado por texto en el documento."
+    if ruta.suffix.lower() == ".pdf":
+        if es_oficial:
+            copias = _copias_en_primera_pagina_pdf(ruta)
+            if copias:
+                return copias, "Ejemplar según título en página 1 del PDF oficial."
+        else:
+            copias = detectar_copias_en_pdf_texto(ruta)
+            if copias:
+                return copias, "Detectado por texto en el documento."
 
     paginas = _paginas_de_archivo(ruta)
     if not paginas:
         return [], "No se pudo abrir el archivo."
 
+    if es_oficial:
+        return [], None
+
+    nota: str | None = None
     if usar_gemini and os.environ.get("GEMINI_API_KEY"):
         copias, nota = detectar_copias_con_gemini(paginas[0])
         if copias:

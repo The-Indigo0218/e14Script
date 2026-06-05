@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,9 +58,35 @@ class LecturaOCR:
     confianza_global: float = 0.0
     necesita_revision: bool = True
     notas: str | None = None
+    detalle_api: str | None = None   # informe legible de lo que respondió la API
 
 
 # ─── Utilidades comunes ───────────────────────────────────────────────────────
+def _mensaje_error_api(exc: Exception) -> str:
+    """Evita filtrar la API key en mensajes de error."""
+    msg = str(exc).split("?key=")[0].split("key=")[0].strip()
+    if "429" in msg:
+        return "Error Gemini: 429 Too Many Requests (cuota/rate limit; espera un momento y reintenta)."
+    return f"Error Gemini: {msg}"
+
+
+def _post_gemini_con_reintento(url: str, api_key: str, cuerpo: dict, intentos: int = 4):
+    import requests
+    esperas = (3, 8, 20, 45)
+    ultimo = None
+    for n in range(intentos):
+        r = requests.post(url, params={"key": api_key}, json=cuerpo, timeout=90)
+        ultimo = r
+        if r.status_code == 429 and n < intentos - 1:
+            time.sleep(esperas[min(n, len(esperas) - 1)])
+            continue
+        r.raise_for_status()
+        return r
+    if ultimo is not None:
+        ultimo.raise_for_status()
+    raise RuntimeError("Sin respuesta de Gemini")
+
+
 def _imagen_a_base64_png(imagen_gris: np.ndarray) -> str:
     ok, buf = cv2.imencode(".png", imagen_gris)
     if not ok:
@@ -84,20 +111,46 @@ def _prompt(cols: list[str]) -> str:
         "Lee el NÚMERO de votos de cada uno de estos campos:\n"
         f"{lineas}\n\n"
         "Reglas:\n"
-        "- Si una casilla está vacía, el valor del campo es 0 sólo si claramente no "
-        "hay nada escrito; si dudas si hay algo escrito, devuelve null.\n"
-        "- No inventes. Si no puedes leerlo con seguridad, baja la confianza.\n"
+        "- Cada número tiene hasta 3 casillas. Puntos '•' o marcas a la izquierda "
+        "son ceros vacíos, NO son dígitos (ej. '..3' = 3, '.77' = 77, '130' = 130).\n"
+        "- Si una casilla está vacía, el valor es 0 solo si no hay ningún dígito.\n"
+        "- No inventes. Si no puedes leerlo con seguridad, devuelve null y confianza baja.\n"
         "- Devuelve SOLO un JSON con esta forma exacta:\n"
         '{ "campos": { "<clave>": { "valor": <entero|null>, '
         '"confianza": <numero 0..1> }, ... } }'
     )
 
 
+def _informe_api(campos: dict, cols: list[str]) -> str:
+    """Texto legible de lo que devolvió Gemini/GPT por casilla."""
+    partes: list[str] = []
+    ok: list[str] = []
+    for c in cols:
+        celda = campos.get(c) or {}
+        v = celda.get("valor")
+        try:
+            cf = float(celda.get("confianza", 0.0))
+        except (TypeError, ValueError):
+            cf = 0.0
+        et = _etiqueta(c)
+        if v is None:
+            partes.append(f"{et}: sin leer (API conf={cf:.0%})")
+        elif cf < UMBRAL_REVISION:
+            partes.append(f"{et}={v} (conf baja {cf:.0%})")
+        else:
+            ok.append(f"{et}={v}")
+    trozos = []
+    if ok:
+        trozos.append("OK: " + ", ".join(ok))
+    if partes:
+        trozos.append("REVISAR: " + " | ".join(partes))
+    return " — ".join(trozos) if trozos else "API: todos los campos OK"
+
+
 def _parsear_respuesta(texto: str, cols: list[str]) -> LecturaOCR:
     valores = {c: None for c in cols}
     confianzas = {c: 0.0 for c in cols}
     try:
-        # tolerar texto alrededor del JSON
         ini, fin = texto.find("{"), texto.rfind("}")
         data = json.loads(texto[ini:fin + 1])
         campos = data.get("campos", data)
@@ -109,13 +162,15 @@ def _parsear_respuesta(texto: str, cols: list[str]) -> LecturaOCR:
                 confianzas[c] = float(celda.get("confianza", 0.0))
             except (TypeError, ValueError):
                 confianzas[c] = 0.0
+        detalle = _informe_api(campos, cols)
     except (json.JSONDecodeError, ValueError, AttributeError):
-        return LecturaOCR(valores, confianzas, 0.0, True, "Respuesta OCR no parseable.")
+        return LecturaOCR(valores, confianzas, 0.0, True,
+                          "Respuesta OCR no parseable.", texto[:300])
 
     presentes = [confianzas[c] for c in cols if valores[c] is not None]
     glob = min(presentes) if presentes else 0.0
     revisar = (not presentes) or any(cf < UMBRAL_REVISION for cf in presentes)
-    return LecturaOCR(valores, confianzas, glob, revisar)
+    return LecturaOCR(valores, confianzas, glob, revisar, detalle_api=detalle)
 
 
 # ─── Backend manual (sin costo) ───────────────────────────────────────────────
@@ -158,17 +213,16 @@ class BackendGemini:
             "generationConfig": {"response_mime_type": "application/json", "temperature": 0},
         }
         try:
-            r = requests.post(
-                self.URL.format(modelo=self.modelo),
-                params={"key": self.api_key},
-                json=cuerpo, timeout=60,
-            )
-            r.raise_for_status()
+            r = _post_gemini_con_reintento(
+                self.URL.format(modelo=self.modelo), self.api_key, cuerpo)
             texto = r.json()["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:  # noqa: BLE001 — fallo de red/API → marcar revisión
             return LecturaOCR({c: None for c in cols}, {c: 0.0 for c in cols},
-                              0.0, True, f"Error Gemini: {e}")
-        return _parsear_respuesta(texto, cols)
+                              0.0, True, _mensaje_error_api(e))
+        lectura = _parsear_respuesta(texto, cols)
+        if lectura.detalle_api:
+            lectura.notas = lectura.detalle_api
+        return lectura
 
 
 # ─── Backend GPT (OpenAI, REST) — verificador opcional ────────────────────────

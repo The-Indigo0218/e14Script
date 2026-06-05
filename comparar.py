@@ -17,6 +17,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from e14.almacen import Almacen
+from e14.mesa import pares_disponibles, etiqueta_mesa
 from e14.modelo import (
     FUENTE_TESTIGO,
     FUENTE_REGISTRADURIA,
@@ -189,6 +190,18 @@ def main():
         print(f"❌ No existe la base de datos: {db}")
         print("   Primero corre leer_testigos.py y leer_registraduria.py.")
         sys.exit(1)
+
+    ambos, solo_t, solo_r = pares_disponibles("datos/testigos", "datos/registraduria")
+    if ambos:
+        print("Pares listos en carpetas (mismo código zona_puesto_mesa):")
+        for c in sorted(ambos):
+            print(f"   • {c}  ({etiqueta_mesa(c)})")
+    if solo_t:
+        print(f"⚠️  Solo en testigos (sin par oficial): {', '.join(sorted(solo_t))}")
+    if solo_r:
+        print(f"⚠️  Solo en registraduría (sin testigo): {', '.join(sorted(solo_r))}")
+    if ambos or solo_t or solo_r:
+        print()
 
     alm = Almacen(db)
     testigo = alm.leer_por_fuente(FUENTE_TESTIGO)

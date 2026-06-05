@@ -83,7 +83,8 @@ def cargar_csv(ruta_csv: str, db: str, tipo: str | None) -> int:
     return n
 
 
-def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None) -> int:
+def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None,
+                layouts: list[str] | None) -> int:
     if not Path(PLANTILLA).exists():
         print(f"❌ Falta la plantilla oficial: {PLANTILLA}")
         sys.exit(1)
@@ -95,11 +96,16 @@ def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None) ->
     print(f"Tipo de ejemplar: {etiqueta_tipo_acta(tipo)}")
     alineador = Alineador(PLANTILLA, dpi=150)
     ocr = backend_por_defecto()
-    print(f"Motor OCR: {ocr.nombre}\n")
+    print(f"Motor OCR: {ocr.nombre}")
+    if layouts:
+        print("Modo: solo página 1 (candidatos 1-7)\n")
+    else:
+        print()
     alm = Almacen(db)
     for pdf in pdfs:
         cod = codigo if len(pdfs) == 1 else None
-        acta = leer_acta_pdf(str(pdf), alineador, ocr, FUENTE_TESTIGO, cod, tipo_acta=tipo)
+        acta = leer_acta_pdf(str(pdf), alineador, ocr, FUENTE_TESTIGO, cod,
+                              tipo_acta=tipo, layouts=layouts)
         alm.guardar(acta)
         estado = "REVISAR" if acta.necesita_revision else "OK"
         conf = f"{acta.confianza:.0%}" if acta.confianza is not None else "—"
@@ -114,7 +120,7 @@ def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None) ->
 
 
 def main():
-    entrada, db, codigo, tipo = parsear_args(CARPETA_DEFECTO)
+    entrada, db, codigo, tipo, layouts, _solo_p1 = parsear_args(CARPETA_DEFECTO)
 
     if not entrada.exists():
         print(f"❌ No existe: {entrada}")
@@ -124,7 +130,7 @@ def main():
         n = cargar_csv(str(entrada), db, tipo)
         print(f"✅ {n} actas de testigos cargadas en {db} (fuente='testigo', modo CSV).")
     else:
-        n = cargar_pdfs(entrada, db, codigo, tipo)
+        n = cargar_pdfs(entrada, db, codigo, tipo, layouts)
         print(f"\n✅ Procesados {n} E-14 de testigos en {db} (fuente='testigo', modo OCR).")
 
 
