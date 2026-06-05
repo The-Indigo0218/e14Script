@@ -33,16 +33,21 @@ auditoria-e14/                 (este repositorio)
   VISION_Y_DECISIONES.md       por qué
   PLAN_PASO_A_PASO.md          cómo (este archivo)
 
-  e14/                         paquete con la lógica (a migrar desde el prototipo)
-    modelo.py                  CONTRATO: estructura ActaE14 + columnas de votos
-    almacen.py                 base de datos (SQLite; luego nube)
-    alineacion.py              CAPA 1: alineación por plantilla (SIFT+homografía)
-    ocr.py                     CAPA 2: punto de conexión del OCR (Gemini/GPT)
-    comparador.py              CAPA 3: lógica de comparación
+  e14/                         paquete con la lógica
+    modelo.py                  CONTRATO: ActaE14 + columnas de votos
+    almacen.py                 SQLite (luego nube)
+    mesa.py                    código zona_puesto_mesa + emparejamiento carpetas
+    alineacion.py              CAPA 1: SIFT + homografía
+    preprocess.py              recorte/zoom/CLAHE antes del OCR
+    ocr.py                     CAPA 2: Gemini / GPT / manual
+    evidencia.py               copias visibles en la foto
+    lectura.py                 orquestador PDF → ActaE14
+    comparador.py              CAPA 3: comparación
 
-  leer_testigos.py             SCRIPT 1: carga E-14 del testigo a la tabla
-  leer_registraduria.py        SCRIPT 2: PDF oficial → capa1 → OCR → tabla
-  comparar.py                  SCRIPT 3: cruza fuentes → Excel de discrepancias
+  leer_testigos.py             SCRIPT 1: testigo (CSV o PDF) → tabla
+  leer_registraduria.py        SCRIPT 2: oficial → capa1 → OCR → tabla
+  comparar.py                  SCRIPT 3: cruza fuentes → Excel
+  probar_api.py                verificar clave antes de OCR masivo
 ```
 
 **Contrato compartido:** los 3 scripts hablan el mismo "idioma": el objeto `ActaE14`
@@ -69,13 +74,18 @@ Cada fila de la tabla: `codigo_mesa`, `fuente` (testigo|registraduria), votos
 
 | Componente | Estado | Notas |
 |---|---|---|
-| Modelo de datos (`modelo.py`) | ✅ | Contrato `ActaE14` + 13 candidatos |
+| Modelo de datos (`modelo.py`) | ✅ | `ActaE14`, `tipo_acta`, `copias_en_evidencia` |
 | Almacén SQLite (`almacen.py`) | ✅ | Tabla `actas`, clave (mesa, fuente) |
-| Capa 1 alineación (`alineacion.py`) | ✅ | Probada en acta real; QA por inliers |
-| Comparador (`comparador.py` + `comparar.py`) | ✅ | Excel de 3 hojas; probado |
-| Script 1 testigos (`leer_testigos.py`) | ✅ | Carga desde CSV |
-| Script 2 registraduría (`leer_registraduria.py`) | ✅ pipeline | Falta enchufar OCR real |
-| Capa 2 OCR (`ocr.py`) | ⏳ | Interfaz lista; backend nube por implementar |
+| Emparejamiento (`mesa.py`) | ✅ | `21_01_13_testigo.pdf` ↔ `21_01_13_registraduria.pdf` |
+| Capa 1 alineación (`alineacion.py`) | ✅ | Probada mesa 21_01_13; QA por inliers |
+| Preprocesamiento (`preprocess.py`) | ✅ | Recorte negro + zoom para OCR |
+| Capa 2 OCR (`ocr.py`) | ✅ | Gemini/GPT conectados; informe API en notas |
+| Trazabilidad copias (`evidencia.py`) | ✅ | Foto testigo + título PDF oficial |
+| Lectura unificada (`lectura.py`) | ✅ | PDF/imagen; `--solo-pagina-1` |
+| Comparador (`comparador.py` + `comparar.py`) | ✅ | Excel + hoja Trazabilidad E-14 |
+| Script 1 testigos (`leer_testigos.py`) | ✅ | CSV y PDF/OCR |
+| Script 2 registraduría (`leer_registraduria.py`) | ✅ | Pipeline completo con Gemini |
+| Par de prueba en repo | ✅ | `datos/*/21_01_13_*.pdf` — ver `README.md` |
 | DB en la nube | ⏳ | Hoy SQLite local |
 | App de escritorio + instalador Windows | ⏳ | Pendiente |
 
@@ -83,15 +93,8 @@ Cada fila de la tabla: `codigo_mesa`, `fuente` (testigo|registraduria), votos
 
 ## 4. Pasos pendientes (en orden)
 
-### Paso A — Conectar el OCR (capa 2) con Gemini
-1. Crear clave de API de Gemini.
-2. Implementar `BackendNube` en `e14/ocr.py`:
-   - Recibe la imagen **ya alineada** (capa 1) y el `layout_id`.
-   - Envía la imagen pidiendo **JSON estricto** con `response_schema`:
-     `{ "c1": {valor, confianza}, ..., "blanco": {...}, ... }`.
-   - El prompt indica qué casillas existen según el layout (cand 1–7, o 8–13 + totales).
-   - Devuelve `LecturaOCR` (valores + confianzas + confianza_global).
-3. Regla: si `confianza < 0.80` en una casilla → marcar `necesita_revision`.
+### Paso A — ~~Conectar el OCR (capa 2) con Gemini~~ ✅ HECHO
+Ver `e14/ocr.py` (`BackendGemini`), `probar_api.py` y guía de reproducción en `README.md`.
 
 ### Paso B — Recorte por casilla (opcional, para máxima precisión)
 - Usando las coordenadas fijas de la plantilla (capa 1 ya alinea a ellas), recortar
@@ -116,20 +119,24 @@ Cada fila de la tabla: `codigo_mesa`, `fuente` (testigo|registraduria), votos
 
 ---
 
-## 5. Cómo correr (estado actual del prototipo)
+## 5. Cómo correr (reproducir con el par incluido en el repo)
+
+Ver **`README.md` → Guía de reproducción** (paso a paso completo).
+
+Resumen rápido (mesa Cartagena 21_01_13, candidatos 1–7):
 
 ```bash
-# 1) cargar E-14 de testigos desde un CSV
-python leer_testigos.py ejemplo_testigos.csv actas.db
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env    # pegar GEMINI_API_KEY
+python probar_api.py
 
-# 2) leer E-14 oficiales (PDF o carpeta) — hoy en modo OCR "manual"
-python leer_registraduria.py acta_oficial.pdf actas.db --codigo 88-128-15-85-001
-
-# 3) comparar y generar Excel de discrepancias
-python comparar.py actas.db comparacion_E14.xlsx
+python leer_testigos.py datos/testigos/21_01_13_testigo.pdf actas.db --tipo claveros --solo-pagina-1
+python leer_registraduria.py datos/registraduria/21_01_13_registraduria.pdf actas.db --solo-pagina-1
+python comparar.py actas.db comparacion_21_01_13.xlsx
 ```
 
-Dependencias: ver `requirements.txt` (OpenCV, PyMuPDF, numpy, openpyxl).
+Esperado pág. 1: c1=130, c2=3, c4=77. Dependencias: `requirements.txt`.
 
 ---
 
