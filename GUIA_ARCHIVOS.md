@@ -28,9 +28,9 @@ auditoria-e14/
 │   └── cli_args.py               → Flags: --tipo, --codigo, --solo-pagina-1
 │
 ├── 📦 e14/  (motor — no se ejecuta directo)
-│   ├── modelo.py                 → ActaE14, candidatos, tipo_acta, copias_en_evidencia
+│   ├── modelo.py                 → ActaE14, 2 candidatos (segunda vuelta), tipo_acta, copias_en_evidencia
 │   ├── almacen.py                → SQLite (actas.db)
-│   ├── mesa.py                   → Código zona_puesto_mesa y emparejamiento de carpetas
+│   ├── mesa.py                   → Código municipio_zona_puesto_mesa y emparejamiento de carpetas
 │   ├── alineacion.py             → Capa 1: SIFT + homografía vs plantilla
 │   ├── preprocess.py             → Recorte negro, zoom, CLAHE antes del OCR
 │   ├── ocr.py                    → Capa 2: Gemini / GPT / manual + informe API
@@ -94,7 +94,7 @@ Votos esperados en pág. 1: **c1=130, c2=3, c4=77** (resto 0).
 | **`modelo.py`** | Contrato | `ActaE14`: mesa, votos c1–c13, `tipo_acta`, `copias_en_evidencia`, confianza. |
 | **`almacen.py`** | DB | SQLite `actas.db`; clave `(codigo_mesa, fuente)`. |
 | **`mesa.py`** | Emparejamiento | `21_01_13_testigo.pdf` → código `21_01_13`; `pares_disponibles()` entre carpetas. |
-| **`alineacion.py`** | **1** | PDF → gris; SIFT + homografía vs `plantillas/muestra-formulario-e-14.pdf`. Layouts: `candidatos_1_7`, `candidatos_8_13`, `firmas`. Parámetro `solo_layouts` para forzar uno. |
+| **`alineacion.py`** | **1** | PDF → gris; SIFT + homografía vs `plantillas/muestra-formulario-e14-segunda-vuelta.pdf`. Layouts: `acta_completa` (2 candidatos + totales, 1 página), `firmas`. Parámetro `solo_layouts` para forzar uno. |
 | **`preprocess.py`** | Pre-OCR | `recortar_margenes_negros()` (PDF alto → mucho negro tras alinear), `mejorar_para_ocr()` (CLAHE + zoom). |
 | **`ocr.py`** | **2** | Gemini (recomendado), GPT, manual. Prompt para puntos como ceros (`..3`→3). Reintentos 429. Campo `detalle_api` en notas. |
 | **`evidencia.py`** | Trazabilidad | Qué copias aparecen en la foto. PDF oficial: lee título pág. 1; fotos testigo: Gemini o heurística de layout. |
@@ -126,12 +126,16 @@ Votos esperados en pág. 1: **c1=130, c2=3, c4=77** (resto 0).
 ### Convención de nombres (usar esta)
 
 ```
-ZONA_PUESTO_MESA_testigo.pdf
-ZONA_PUESTO_MESA_registraduria.pdf
+MUNICIPIO_ZONA_PUESTO_MESA_testigo.pdf
+MUNICIPIO_ZONA_PUESTO_MESA_registraduria.pdf
 ```
 
+El municipio va primero porque zona/puesto/mesa se numeran dentro de cada
+municipio; al procesar un departamento completo (varios municipios) hace falta
+para no fusionar mesas de lugares distintos con el mismo número.
+
 El sufijo `_testigo` / `_registraduria` se quita para obtener `codigo_mesa`. Ver
-`e14/mesa.py` → `codigo_mesa_desde_archivo()`.
+`e14/mesa.py` → `codigo_mesa_desde_archivo()` y `municipio_zona_puesto_mesa_desde_codigo()`.
 
 ---
 

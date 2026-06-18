@@ -9,7 +9,8 @@ Formato:
   • actas.db: cualquier posicional que termine en .db (o el 2º posicional).
   • --codigo: fuerza el código de mesa (solo si la entrada es un único archivo).
   • --tipo  : de qué COPIA del E-14 viene (claveros, delegados, transmisión).
-  • --solo-pagina-1 : solo candidatos 1-7 (1 llamada OCR por acta; prueba barata).
+  • --solo-pagina-1 : solo la página de candidatos/totales, sin firmas
+                       (1 llamada OCR por acta; evita procesar la hoja de firmas).
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from e14.alineacion import LAYOUT_CANDIDATOS_1_7
+from e14.alineacion import LAYOUT_ACTA_COMPLETA
 
 
 def parsear_args(carpeta_defecto: str, tipo_defecto: str | None = None):
@@ -56,5 +57,5 @@ def parsear_args(carpeta_defecto: str, tipo_defecto: str | None = None):
     if entrada is None:
         entrada = Path(carpeta_defecto)
 
-    layouts = [LAYOUT_CANDIDATOS_1_7] if solo_pagina_1 else None
+    layouts = [LAYOUT_ACTA_COMPLETA] if solo_pagina_1 else None
     return entrada, db, codigo, tipo, layouts, solo_pagina_1

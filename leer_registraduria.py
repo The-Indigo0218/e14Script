@@ -25,7 +25,7 @@ from e14.informe import imprimir_contenido_acta, imprimir_siguiente_paso_registr
 from e14.lectura import leer_acta_pdf, listar_documentos, imprimir_trazabilidad
 from cli_args import parsear_args
 
-PLANTILLA = "plantillas/muestra-formulario-e-14.pdf"
+PLANTILLA = "plantillas/muestra-formulario-e14-segunda-vuelta.pdf"
 CARPETA_DEFECTO = "datos/registraduria"
 
 
@@ -51,7 +51,7 @@ def main():
     ocr = backend_por_defecto()
     print(f"Motor OCR: {ocr.nombre}")
     if layouts:
-        print("Modo: solo página 1 (candidatos 1-7)\n")
+        print("Modo: solo página de candidatos/totales (sin firmas)\n")
     else:
         print()
 

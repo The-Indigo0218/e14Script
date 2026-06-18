@@ -11,14 +11,16 @@
 - **Qué es un E-14:** "Acta de Escrutinio de los Jurados de Votación". Es el documento
   donde, al cerrar la mesa, los jurados anotan **a mano** cuántos votos sacó cada
   candidato. Es la fuente primaria del conteo en Colombia.
-- **Estructura del E-14 (primera vuelta 2026):** son 3 páginas escaneadas, y cada
-  página trae **3 copias** de la misma acta (CLAVEROS / DELEGADOS / TRANSMISIÓN):
-  - **Página de candidatos 1–7** + "Nivelación de la mesa" (total votantes E-11,
-    total votos en la urna, incinerados).
-  - **Página de candidatos 8–13** + votos en blanco / nulos / no marcados + **suma total**.
+- **Estructura del E-14 (segunda vuelta 2026):** al haber solo 2 candidatos, el
+  formulario es más compacto que en primera vuelta. Cada página trae **3 copias**
+  de la misma acta (CLAVEROS / DELEGADOS / TRANSMISIÓN):
+  - **Página de candidatos 1–2** + "Nivelación de la mesa" (total votantes E-11,
+    total votos en la urna, incinerados) + votos en blanco / nulos / no marcados +
+    **suma total** — todo en una sola hoja (layout `acta_completa`).
   - **Página de firmas/cédulas** de los jurados (secundaria para el conteo).
 - **Los votos** se escriben con un dígito por casilla (ej. `1 0 6` = 106).
-- **13 candidatos** (ver lista exacta en `e14/modelo.py`).
+- **2 candidatos** (los finalistas; ver lista exacta en `e14/modelo.py` — pendiente
+  de completar con los nombres reales certificados).
 
 - **Objetivo del software:** leer el E-14 oficial y el del testigo, pasarlos a una
   tabla común, y **comparar** para detectar diferencias; marcar para revisión humana
@@ -36,7 +38,7 @@ auditoria-e14/                 (este repositorio)
   e14/                         paquete con la lógica
     modelo.py                  CONTRATO: ActaE14 + columnas de votos
     almacen.py                 SQLite (luego nube)
-    mesa.py                    código zona_puesto_mesa + emparejamiento carpetas
+    mesa.py                    código municipio_zona_puesto_mesa + emparejamiento carpetas
     alineacion.py              CAPA 1: SIFT + homografía
     preprocess.py              recorte/zoom/CLAHE antes del OCR
     ocr.py                     CAPA 2: Gemini / GPT / manual

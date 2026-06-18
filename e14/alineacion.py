@@ -12,12 +12,18 @@ Ventajas:
     votos quedan SIEMPRE en las mismas coordenadas → recorte exacto para el OCR.
   • El número de inliers sirve como control de calidad (poca coincidencia = revisar).
 
-La plantilla tiene 3 "layouts" (páginas lógicas):
-  • LAYOUT_CANDIDATOS_1_7  (muestra pág 1): candidatos 1-7 + nivelación de la mesa
-  • LAYOUT_CANDIDATOS_8_13 (muestra pág 2): candidatos 8-13 + blanco/nulos/suma
-  • LAYOUT_FIRMAS          (muestra pág 3): constancias y firmas/cédulas de jurados
+La plantilla de SEGUNDA VUELTA, con solo 2 candidatos, entra completa en una
+sola página lógica (a diferencia de primera vuelta, que necesitaba 2 páginas
+para 13 candidatos). Layouts:
+  • LAYOUT_ACTA_COMPLETA (muestra pág 1): candidatos 1-2 + blanco/nulos/no
+    marcados + nivelación de la mesa + suma, todo en la misma hoja.
+  • LAYOUT_FIRMAS        (muestra pág 2): constancias y firmas/cédulas de jurados
 
-Cada página del PDF escaneado se compara contra los 3 layouts y se queda con el
+NOTA: si la plantilla oficial real de segunda vuelta resulta tener más de una
+página de votos, ajustar `_LAYOUT_POR_PAGINA_MUESTRA` y `_COLUMNAS_POR_LAYOUT`
+abajo para que coincidan con el PDF real.
+
+Cada página del PDF escaneado se compara contra los layouts y se queda con el
 de mayor coincidencia (así no importa el orden ni la orientación de las páginas).
 """
 
@@ -30,16 +36,16 @@ import cv2
 import fitz  # PyMuPDF
 import numpy as np
 
+from e14.modelo import columnas_voto
+
 # Identificadores de layout
-LAYOUT_CANDIDATOS_1_7 = "candidatos_1_7"
-LAYOUT_CANDIDATOS_8_13 = "candidatos_8_13"
+LAYOUT_ACTA_COMPLETA = "acta_completa"
 LAYOUT_FIRMAS = "firmas"
 
 # Orden de las páginas en el PDF de muestra (plantilla oficial)
 _LAYOUT_POR_PAGINA_MUESTRA = {
-    0: LAYOUT_CANDIDATOS_1_7,
-    1: LAYOUT_CANDIDATOS_8_13,
-    2: LAYOUT_FIRMAS,
+    0: LAYOUT_ACTA_COMPLETA,
+    1: LAYOUT_FIRMAS,
 }
 
 # Umbral mínimo de inliers para considerar la alineación confiable.
@@ -47,9 +53,8 @@ INLIERS_MIN_CONFIABLE = 25
 
 # Qué columnas de voto aporta cada layout (qué casillas hay en cada página).
 _COLUMNAS_POR_LAYOUT = {
-    LAYOUT_CANDIDATOS_1_7:  [f"c{n}" for n in range(1, 8)],
-    LAYOUT_CANDIDATOS_8_13: [f"c{n}" for n in range(8, 14)] + ["blanco", "nulos", "no_marcados"],
-    LAYOUT_FIRMAS:          [],
+    LAYOUT_ACTA_COMPLETA: columnas_voto(),
+    LAYOUT_FIRMAS:        [],
 }
 
 

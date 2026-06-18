@@ -19,6 +19,10 @@ from e14.modelo import (
     FUENTE_REGISTRADURIA,
 )
 
+# Columnas de candidato en orden (["c1", "c2"]) y categorías no candidato
+# (["blanco", "nulos", "no_marcados"]), para los agregados de margen/totales.
+_COLS_CANDIDATOS = [f"c{n}" for n in sorted(int(k) for k in CANDIDATOS)]
+
 
 def etiqueta_columna(col: str) -> str:
     """Nombre legible de una columna de voto."""
@@ -61,6 +65,14 @@ class ComparacionMesa:
     copias_testigo: str | None = None       # copias visibles en evidencia jurados
     tipo_registraduria: str | None = None
     copias_registraduria: str | None = None
+    confianza_testigo: float | None = None
+    confianza_registraduria: float | None = None
+    revisar_testigo: bool = False         # necesita_revision interno (ej. suma no cuadra)
+    revisar_registraduria: bool = False
+    verificado_testigo: bool = False      # un humano ya confirmó esta lectura
+    verificado_registraduria: bool = False
+    nota_verificacion_testigo: str | None = None
+    nota_verificacion_registraduria: str | None = None
 
     @property
     def trazabilidad_testigo(self) -> str:
@@ -77,6 +89,80 @@ class ComparacionMesa:
         """Hay 2+ copias en evidencia del testigo → conviene revisar si coinciden."""
         from e14.modelo import parsear_copias
         return len(parsear_copias(self.copias_testigo)) >= 2
+
+    def _dic(self, fuente: str) -> dict[str, int | None]:
+        """{columna: valor} de una fuente, a partir de las celdas ya comparadas."""
+        atributo = "valor_testigo" if fuente == "testigo" else "valor_registraduria"
+        return {d.columna: getattr(d, atributo) for d in self.diferencias}
+
+    def _suma(self, fuente: str, columnas: list[str]) -> int | None:
+        """Suma de `columnas` para una fuente; None si ninguna tiene valor."""
+        dic = self._dic(fuente)
+        presentes = [dic[c] for c in columnas if dic.get(c) is not None]
+        return sum(presentes) if presentes else None
+
+    def _margen(self, fuente: str) -> int | None:
+        """votos candidato 1 - votos candidato 2 (positivo = va ganando el 1)."""
+        dic = self._dic(fuente)
+        if len(_COLS_CANDIDATOS) != 2:
+            return None
+        v1, v2 = dic.get(_COLS_CANDIDATOS[0]), dic.get(_COLS_CANDIDATOS[1])
+        if v1 is None or v2 is None:
+            return None
+        return v1 - v2
+
+    @property
+    def margen_testigo(self) -> int | None:
+        return self._margen("testigo")
+
+    @property
+    def margen_registraduria(self) -> int | None:
+        return self._margen("registraduria")
+
+    @property
+    def diferencia_margen(self) -> int | None:
+        """
+        Δ margen = margen_registraduría - margen_testigo.
+        Positivo favorece al candidato 1 (c1); negativo, al candidato 2 (c2).
+        """
+        mt, mr = self.margen_testigo, self.margen_registraduria
+        if mt is None or mr is None:
+            return None
+        return mr - mt
+
+    @property
+    def total_no_validos_testigo(self) -> int | None:
+        return self._suma("testigo", CATEGORIAS_NO_CANDIDATO)
+
+    @property
+    def total_no_validos_registraduria(self) -> int | None:
+        return self._suma("registraduria", CATEGORIAS_NO_CANDIDATO)
+
+    @property
+    def diferencia_no_validos(self) -> int | None:
+        t, r = self.total_no_validos_testigo, self.total_no_validos_registraduria
+        return None if t is None or r is None else r - t
+
+    @property
+    def total_testigo(self) -> int | None:
+        return self._suma("testigo", columnas_voto())
+
+    @property
+    def total_registraduria(self) -> int | None:
+        return self._suma("registraduria", columnas_voto())
+
+    @property
+    def diferencia_total(self) -> int | None:
+        t, r = self.total_testigo, self.total_registraduria
+        return None if t is None or r is None else r - t
+
+    @property
+    def porcentaje_discrepancia_total(self) -> float | None:
+        """Δ total como fracción del total testigo (magnitud del error global de la mesa)."""
+        t, d = self.total_testigo, self.diferencia_total
+        if not t or d is None:
+            return None
+        return d / t
 
     def _tiene_votos(self, fuente: str) -> bool:
         if fuente == "testigo":
@@ -140,6 +226,14 @@ def comparar_mesa(codigo: str, fila_t: dict | None, fila_r: dict | None) -> Comp
         copias_testigo=_valor(fila_t, "copias_en_evidencia"),
         tipo_registraduria=_valor(fila_r, "tipo_acta"),
         copias_registraduria=_valor(fila_r, "copias_en_evidencia"),
+        confianza_testigo=(fila_t or {}).get("confianza"),
+        confianza_registraduria=(fila_r or {}).get("confianza"),
+        revisar_testigo=bool((fila_t or {}).get("necesita_revision")),
+        revisar_registraduria=bool((fila_r or {}).get("necesita_revision")),
+        verificado_testigo=bool((fila_t or {}).get("verificado_manualmente")),
+        verificado_registraduria=bool((fila_r or {}).get("verificado_manualmente")),
+        nota_verificacion_testigo=(fila_t or {}).get("notas_verificacion"),
+        nota_verificacion_registraduria=(fila_r or {}).get("notas_verificacion"),
     )
 
 

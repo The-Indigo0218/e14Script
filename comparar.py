@@ -21,12 +21,19 @@ from e14.mesa import pares_disponibles, etiqueta_mesa
 from e14.modelo import (
     FUENTE_TESTIGO,
     FUENTE_REGISTRADURIA,
+    CANDIDATOS,
+    CATEGORIAS_NO_CANDIDATO,
     columnas_voto,
     etiqueta_tipo_acta,
     copias_a_texto,
 )
 from e14.comparador import comparar, resumen, etiqueta_columna
 from e14.informe import imprimir_contenido_acta
+from e14.ocr import UMBRAL_REVISION
+
+_COLS_CANDIDATOS = [f"c{n}" for n in sorted(int(k) for k in CANDIDATOS)]
+_NOMBRE_C1 = CANDIDATOS[_COLS_CANDIDATOS[0][1:]][0] if len(_COLS_CANDIDATOS) == 2 else "candidato 1"
+_NOMBRE_C2 = CANDIDATOS[_COLS_CANDIDATOS[1][1:]][0] if len(_COLS_CANDIDATOS) == 2 else "candidato 2"
 
 VERDE = "C6EFCE"
 ROJO = "FFC7CE"
@@ -69,6 +76,20 @@ def generar_excel(comparaciones, salida):
     for i, (etq, val) in enumerate(filas, start=3):
         ws.cell(i, 1, etq).font = Font(bold=True, name="Arial", size=10)
         ws.cell(i, 2, val).alignment = Alignment(horizontal="center")
+    ws.merge_cells(f"A{len(filas) + 4}:B{len(filas) + 4}")
+    nota = ws.cell(
+        len(filas) + 4, 1,
+        f"Δ Margen: positivo favorece a {_NOMBRE_C1} (c1); negativo, a {_NOMBRE_C2} (c2). "
+        f"Confianza OCR < {UMBRAL_REVISION:.0%} dispara 'PENDIENTE VERIFICAR' en Verificación "
+        "manual OCR; usa 'python verificar_acta.py actas.db <mesa> --fuente <testigo|registraduria> "
+        "--nota \"...\"' para marcarla como verificada — queda guardado en actas.db (no en este "
+        "Excel) y la próxima vez que regeneres el archivo aparecerá 'Verificado'. "
+        "'Revisar' es más amplio: marca cualquier problema interno (confianza baja, suma no "
+        "cuadra, alineación pobre) aunque las fuentes coincidan entre sí. % Discrepancia total "
+        "mide el error global de la mesa como fracción de sus votos.",
+    )
+    nota.font = Font(italic=True, name="Arial", size=9, color="595959")
+    nota.alignment = Alignment(wrap_text=True, vertical="top")
     ws.column_dimensions["A"].width = 28
     ws.column_dimensions["B"].width = 14
 
@@ -79,13 +100,34 @@ def generar_excel(comparaciones, salida):
         "Mesa", "Estado",
         "Copias en evidencia\n(Testigo)", "Votos leídos desde\n(Testigo)",
         "Copias en evidencia\n(Registr.)", "Votos leídos desde\n(Registr.)",
+        "Confianza OCR\n(Testigo)", "Confianza OCR\n(Registr.)",
+        f"Verificación manual OCR\n(< {UMBRAL_REVISION:.0%}) (Testigo)",
+        f"Verificación manual OCR\n(< {UMBRAL_REVISION:.0%}) (Registr.)",
+        "Nota verificación\n(Testigo)", "Nota verificación\n(Registr.)",
+        "Revisar\n(Testigo)", "Revisar\n(Registr.)",
     ]
     for col in cols:
         et = etiqueta_columna(col)
         encabezados += [f"{et}\n(Testigo)", f"{et}\n(Registr.)", "Δ"]
+    encabezados += [
+        "Δ Margen\n(+c1 / -c2)",
+        "Total no válidos\n(blanco+nulos+no marc.)\n(Testigo)",
+        "Total no válidos\n(Registr.)", "Δ",
+        "Total acta\n(Testigo)", "Total acta\n(Registr.)", "Δ",
+        "% Discrepancia\ntotal",
+    ]
     for j, h in enumerate(encabezados, 1):
         _h(ws2.cell(1, j), h)
-    ws2.row_dimensions[1].height = 42
+    ws2.row_dimensions[1].height = 48
+
+    def _celda_num(fila_, col_, valor, fmt=None):
+        c = ws2.cell(fila_, col_, valor if valor is not None else "—")
+        c.alignment = Alignment(horizontal="center")
+        c.font = Font(name="Arial", size=9)
+        c.border = _borde()
+        if fmt and valor is not None:
+            c.number_format = fmt
+        return c
 
     fila = 2
     for comp in comparaciones:
@@ -114,23 +156,92 @@ def generar_excel(comparaciones, salida):
             ce.border = _borde()
             if off in (0, 2) and "+" in texto:
                 ce.fill = PatternFill("solid", start_color=AMARILLO)
+
+        for off, conf in enumerate((comp.confianza_testigo, comp.confianza_registraduria)):
+            c = _celda_num(fila, 7 + off, conf, fmt="0%")
+            if conf is not None and conf < UMBRAL_REVISION:
+                c.fill = PatternFill("solid", start_color=ROJO)
+                c.font = Font(bold=True, name="Arial", size=9, color="9C0006")
+
+        confs = (comp.confianza_testigo, comp.confianza_registraduria)
+        verificados = (comp.verificado_testigo, comp.verificado_registraduria)
+        for off, (conf, verificado) in enumerate(zip(confs, verificados)):
+            if conf is None:
+                texto, color = "—", None
+            elif conf >= UMBRAL_REVISION:
+                texto, color = "OK", None
+            elif verificado:
+                texto, color = "Verificado", VERDE
+            else:
+                texto, color = "PENDIENTE VERIFICAR", ROJO
+            c = ws2.cell(fila, 9 + off, texto)
+            c.alignment = Alignment(horizontal="center")
+            c.font = Font(name="Arial", size=9, bold=(color is not None))
+            c.border = _borde()
+            if color:
+                c.fill = PatternFill("solid", start_color=color)
+
+        notas_verif = (comp.nota_verificacion_testigo, comp.nota_verificacion_registraduria)
+        for off, nota in enumerate(notas_verif):
+            c = ws2.cell(fila, 11 + off, nota or "—")
+            c.alignment = Alignment(horizontal="left", wrap_text=True)
+            c.font = Font(name="Arial", size=9)
+            c.border = _borde()
+
+        for off, marca in enumerate((comp.revisar_testigo, comp.revisar_registraduria)):
+            c = ws2.cell(fila, 13 + off, "Sí" if marca else "No")
+            c.alignment = Alignment(horizontal="center")
+            c.font = Font(name="Arial", size=9, bold=marca)
+            c.border = _borde()
+            if marca:
+                c.fill = PatternFill("solid", start_color=AMARILLO)
+
         dmap = {d.columna: d for d in comp.diferencias}
-        j = 7
+        j = 15
         for col in cols:
             dc = dmap[col]
             vt, vr, d, coincide = dc.valor_testigo, dc.valor_registraduria, dc.diferencia, dc.coincide
-            c_t = ws2.cell(fila, j, vt if vt is not None else "—")
-            c_r = ws2.cell(fila, j + 1, vr if vr is not None else "—")
-            c_d = ws2.cell(fila, j + 2, d if d is not None else "—")
-            for c in (c_t, c_r, c_d):
-                c.alignment = Alignment(horizontal="center")
-                c.font = Font(name="Arial", size=9)
-                c.border = _borde()
+            c_t = _celda_num(fila, j, vt)
+            c_r = _celda_num(fila, j + 1, vr)
+            c_d = _celda_num(fila, j + 2, d)
             if not coincide:
                 for c in (c_t, c_r, c_d):
                     c.fill = PatternFill("solid", start_color=ROJO)
                 c_d.font = Font(bold=True, name="Arial", size=9, color="9C0006")
             j += 3
+
+        # ── Agregados: Δ margen, total no válidos, total acta ──
+        c_margen = _celda_num(fila, j, comp.diferencia_margen)
+        if comp.diferencia_margen:
+            c_margen.font = Font(
+                bold=True, name="Arial", size=9,
+                color="9C0006" if comp.diferencia_margen < 0 else "006100",
+            )
+        j += 1
+
+        nv_t, nv_r, nv_d = (
+            comp.total_no_validos_testigo, comp.total_no_validos_registraduria,
+            comp.diferencia_no_validos,
+        )
+        c_nv_t, c_nv_r, c_nv_d = _celda_num(fila, j, nv_t), _celda_num(fila, j + 1, nv_r), _celda_num(fila, j + 2, nv_d)
+        if nv_d:
+            for c in (c_nv_t, c_nv_r, c_nv_d):
+                c.fill = PatternFill("solid", start_color=AMARILLO)
+        j += 3
+
+        tot_t, tot_r, tot_d = comp.total_testigo, comp.total_registraduria, comp.diferencia_total
+        c_tot_t, c_tot_r, c_tot_d = _celda_num(fila, j, tot_t), _celda_num(fila, j + 1, tot_r), _celda_num(fila, j + 2, tot_d)
+        if tot_d:
+            for c in (c_tot_t, c_tot_r, c_tot_d):
+                c.fill = PatternFill("solid", start_color=ROJO)
+                c.font = Font(bold=True, name="Arial", size=9, color="9C0006")
+        j += 3
+
+        c_pct = _celda_num(fila, j, comp.porcentaje_discrepancia_total, fmt="0.0%")
+        if comp.porcentaje_discrepancia_total and abs(comp.porcentaje_discrepancia_total) >= 0.01:
+            c_pct.fill = PatternFill("solid", start_color=ROJO)
+            c_pct.font = Font(bold=True, name="Arial", size=9, color="9C0006")
+
         fila += 1
     ws2.freeze_panes = "G2"
     ws2.column_dimensions["A"].width = 18

@@ -21,8 +21,12 @@ _COLUMNAS_META = [
 ]
 _COLUMNAS_TOTALES = ["suma_total", "total_votos_urna", "total_votantes_e11"]
 _COLUMNAS_AUDIT = ["archivo_origen", "confianza", "necesita_revision", "notas"]
+_COLUMNAS_VERIFICACION = ["verificado_manualmente", "notas_verificacion"]
 
-_TODAS = _COLUMNAS_META + columnas_voto() + _COLUMNAS_TOTALES + _COLUMNAS_AUDIT
+_TODAS = (
+    _COLUMNAS_META + columnas_voto() + _COLUMNAS_TOTALES + _COLUMNAS_AUDIT
+    + _COLUMNAS_VERIFICACION
+)
 
 
 class Almacen:
@@ -39,14 +43,18 @@ class Almacen:
         existentes = {row[1] for row in cur.fetchall()}
         if "copias_en_evidencia" not in existentes:
             self.con.execute("ALTER TABLE actas ADD COLUMN copias_en_evidencia TEXT")
-            self.con.commit()
+        if "verificado_manualmente" not in existentes:
+            self.con.execute("ALTER TABLE actas ADD COLUMN verificado_manualmente INTEGER")
+        if "notas_verificacion" not in existentes:
+            self.con.execute("ALTER TABLE actas ADD COLUMN notas_verificacion TEXT")
+        self.con.commit()
 
     def _crear_tabla(self) -> None:
         cols_def = []
         for c in _TODAS:
             if c in ("codigo_mesa", "fuente", "tipo_acta", "copias_en_evidencia",
                      "departamento", "municipio", "zona", "puesto", "mesa",
-                     "archivo_origen", "notas"):
+                     "archivo_origen", "notas", "notas_verificacion"):
                 tipo = "TEXT"
             elif c == "confianza":
                 tipo = "REAL"
@@ -64,9 +72,22 @@ class Almacen:
         self.con.commit()
 
     def guardar(self, acta: ActaE14) -> None:
-        """Inserta o reemplaza la fila para (codigo_mesa, fuente)."""
+        """
+        Inserta o reemplaza la fila para (codigo_mesa, fuente).
+
+        Conserva la verificación manual si la fila ya existía: re-correr el OCR
+        sobre una mesa ya verificada no debe borrar esa verificación.
+        """
         d = acta.como_dict()
         d["necesita_revision"] = 1 if acta.necesita_revision else 0
+        existente = self.con.execute(
+            "SELECT verificado_manualmente, notas_verificacion FROM actas "
+            "WHERE codigo_mesa = ? AND fuente = ?",
+            (acta.codigo_mesa, acta.fuente),
+        ).fetchone()
+        if existente is not None:
+            d["verificado_manualmente"] = existente["verificado_manualmente"]
+            d["notas_verificacion"] = existente["notas_verificacion"]
         valores = [d.get(c) for c in _TODAS]
         marcadores = ",".join("?" for _ in _TODAS)
         cols = ",".join(_TODAS)
@@ -74,6 +95,20 @@ class Almacen:
             f"INSERT OR REPLACE INTO actas ({cols}) VALUES ({marcadores})", valores
         )
         self.con.commit()
+
+    def marcar_verificado(self, codigo_mesa: str, fuente: str,
+                          verificado: bool = True, nota: str | None = None) -> bool:
+        """Marca/desmarca la verificación manual de una fila ya existente.
+
+        Devuelve False si (codigo_mesa, fuente) no existe en la base.
+        """
+        cur = self.con.execute(
+            "UPDATE actas SET verificado_manualmente = ?, notas_verificacion = ? "
+            "WHERE codigo_mesa = ? AND fuente = ?",
+            (1 if verificado else 0, nota, codigo_mesa, fuente),
+        )
+        self.con.commit()
+        return cur.rowcount > 0
 
     def leer_por_fuente(self, fuente: str) -> dict[str, dict]:
         """{codigo_mesa: fila_dict} para una fuente."""

@@ -25,7 +25,7 @@ from e14.modelo import (
 )
 from e14.alineacion import Alineador, columnas_de_layout, render_pdf_gris
 from e14.evidencia import detectar_copias_en_evidencia, validar_lectura_vs_evidencia
-from e14.mesa import codigo_mesa_desde_archivo, zona_puesto_mesa_desde_codigo, etiqueta_mesa
+from e14.mesa import codigo_mesa_desde_archivo, municipio_zona_puesto_mesa_desde_codigo, etiqueta_mesa
 from e14.preprocess import mejorar_para_ocr
 
 
@@ -43,7 +43,7 @@ def leer_acta_pdf(pdf_path: str, alineador: Alineador, ocr, fuente: str,
                   layouts: list[str] | None = None) -> ActaE14:
     """Lee un E-14 (PDF o foto) y devuelve un ActaE14 con trazabilidad de ejemplares."""
     codigo = codigo_mesa or codigo_mesa_desde_archivo(pdf_path)
-    meta = zona_puesto_mesa_desde_codigo(codigo)
+    meta = municipio_zona_puesto_mesa_desde_codigo(codigo)
     usar_gemini_copias = os.environ.get("OCR_DETECTAR_COPIAS_GEMINI", "").lower() in (
         "1", "true", "yes",
     )

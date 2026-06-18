@@ -12,22 +12,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 
-# ─── CANDIDATOS PRESIDENCIALES 2026 — PRIMERA VUELTA ──────────────────────────
-# número (str) -> (nombre, agrupación)
+# ─── CANDIDATOS PRESIDENCIALES 2026 — SEGUNDA VUELTA ───────────────────────────
+# número (str) -> (nombre, agrupación). SOLO los 2 finalistas pasan a segunda vuelta.
+# Fórmulas completas (según formulario E-14 oficial):
+#   1. Iván Cepeda Castro — vicepresidencial: Aida Quilcué Vivas (Pacto Histórico)
+#   2. Abelardo de la Espriella — vicepresidencial: José Manuel Restrepo
+#      (Defensores de la Patria)
 CANDIDATOS: dict[str, tuple[str, str]] = {
-    "1":  ("IVÁN CEPEDA CASTRO",               "PACTO HISTÓRICO"),
-    "2":  ("CLAUDIA LÓPEZ",                     "UNA NUEVA HISTORIA"),
-    "3":  ("RAÚL SANTIAGO BOTERO JARAMILLO",    "ROMPER EL SISTEMA"),
-    "4":  ("ABELARDO DE LA ESPRIELLA",          "DEFENSORES DE LA PATRIA"),
-    "5":  ("ÓSCAR MAURICIO LIZCANO ARANGO",     "COALICIÓN ASI/RAMÍREZ"),
-    "6":  ("MIGUEL URIBE LONDOÑO",              "CENTRO DEMOCRÁTICO"),
-    "7":  ("SONDRA MACOLLINS GARVIN PINTO",     "SONDRA 2026"),
-    "8":  ("ROY LEONARDO BARRERAS MONTEALEGRE", "LA FUERZA"),
-    "9":  ("CARLOS EDUARDO CAICEDO OMAR",       "FUERZA CIUDADANA"),
-    "10": ("GUSTAVO MATAMOROS CAMACHO",         "PARTIDO ECOLOGISTA COLOMBIANO"),
-    "11": ("PALOMA VALENCIA LASERNA",           "CENTRO DEMOCRÁTICO"),
-    "12": ("SERGIO FAJARDO VALDERRAMA",         "FAJARDO PRESIDENTE"),
-    "13": ("LUIS GILBERTO MURILLO URRUTIA",     "LA OPORTUNIDAD DE COLOMBIA"),
+    "1": ("IVÁN CEPEDA CASTRO",      "PACTO HISTÓRICO"),
+    "2": ("ABELARDO DE LA ESPRIELLA", "DEFENSORES DE LA PATRIA"),
 }
 
 # Categorías de votos NO atribuibles a un candidato
@@ -125,7 +118,7 @@ def resumen_trazabilidad_e14(
 
 def columnas_voto() -> list[str]:
     """Orden canónico de las columnas de votos (candidatos + categorías)."""
-    return [f"c{n}" for n in range(1, 14)] + list(CATEGORIAS_NO_CANDIDATO)
+    return [f"c{n}" for n in sorted(int(k) for k in CANDIDATOS)] + list(CATEGORIAS_NO_CANDIDATO)
 
 
 @dataclass
@@ -147,20 +140,9 @@ class ActaE14:
     puesto: str | None = None
     mesa: str | None = None
 
-    # ── Votos por candidato (c1..c13) ──
+    # ── Votos por candidato (segunda vuelta: solo 2) ──
     c1: int | None = None
     c2: int | None = None
-    c3: int | None = None
-    c4: int | None = None
-    c5: int | None = None
-    c6: int | None = None
-    c7: int | None = None
-    c8: int | None = None
-    c9: int | None = None
-    c10: int | None = None
-    c11: int | None = None
-    c12: int | None = None
-    c13: int | None = None
 
     # ── Otras categorías ──
     blanco: int | None = None
@@ -177,6 +159,10 @@ class ActaE14:
     confianza: float | None = None          # 0..1 de la lectura (OCR)
     necesita_revision: bool = False         # marcado para revisión humana
     notas: str | None = None
+
+    # ── Verificación humana (persiste entre corridas de comparar.py) ──
+    verificado_manualmente: bool = False    # un humano confirmó/corrigió esta lectura
+    notas_verificacion: str | None = None   # comentario de quien verificó
 
     def votos(self) -> dict[str, int | None]:
         """Devuelve {columna_voto: valor} en orden canónico."""

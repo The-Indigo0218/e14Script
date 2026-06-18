@@ -1,4 +1,4 @@
-# Auditoría de actas E-14 — Presidenciales Colombia 2026
+# Auditoría de actas E-14 — Segunda vuelta presidencial Colombia 2026 (Bolívar)
 
 Herramienta para **leer actas E-14** (oficial de la Registraduría y la del testigo
 electoral), pasarlas a una tabla común y **comparar** para detectar discrepancias.
@@ -61,31 +61,42 @@ python probar_api.py
 Si sale `HTTP 429`, espera unos minutos (cuota del free tier) y reintenta. No corras los
 lectores en bucle mientras la cuota esté agotada.
 
-### 4. Par de prueba incluido en el repo
+### 4. Plantilla y par de prueba
 
-El commit trae un par real de Cartagena (zona 21, puesto 01, mesa 13):
+El repo trae un par de **primera vuelta** (Cartagena, zona 21, puesto 01, mesa 13)
+que sirvió para probar el pipeline, pero **ya no alinea** contra la plantilla de
+segunda vuelta (formato distinto: 2 candidatos en vez de 13). Para volver a
+probar de punta a punta, coloca un par real de segunda vuelta:
 
 ```
-datos/testigos/21_01_13_testigo.pdf          ← foto del testigo (2 copias: Claveros + Delegados)
-datos/registraduria/21_01_13_registraduria.pdf  ← PDF oficial (3 páginas, copia Delegados)
+datos/testigos/MUNICIPIO_ZONA_PUESTO_MESA_testigo.pdf
+datos/registraduria/MUNICIPIO_ZONA_PUESTO_MESA_registraduria.pdf
 ```
 
-**Convención de nombres:** `ZONA_PUESTO_MESA` + sufijo de fuente:
+**Convención de nombres:** `MUNICIPIO_ZONA_PUESTO_MESA` + sufijo de fuente. El
+municipio es obligatorio porque zona/puesto/mesa se numeran **dentro de cada
+municipio** — al procesar un departamento completo (varios municipios), dos
+mesas de municipios distintos pueden compartir el mismo número de
+zona_puesto_mesa, y sin el municipio el comparador las fusionaría por error.
 
 | Archivo | `codigo_mesa` resultante |
 |---------|--------------------------|
-| `21_01_13_testigo.pdf` | `21_01_13` |
-| `21_01_13_registraduria.pdf` | `21_01_13` |
+| `cartagena_21_01_13_testigo.pdf` | `cartagena_21_01_13` |
+| `cartagena_21_01_13_registraduria.pdf` | `cartagena_21_01_13` |
 
 El comparador cruza por ese mismo `codigo_mesa`. Ver `e14/mesa.py`.
+
+**Plantilla:** coloca el PDF oficial en blanco de segunda vuelta en
+`plantillas/muestra-formulario-e14-segunda-vuelta.pdf` (ver `e14/alineacion.py`
+si el layout real no entra en una sola página).
 
 ### 5. Flujo recomendado: primero oficial, luego testigo
 
 **Orden sugerido** (1 llamada API por script, sin bucles):
 
 ```bash
-# Paso 1 — SOLO Registraduría (1 llamada OCR)
-python leer_registraduria.py datos/registraduria/21_01_13_registraduria.pdf actas.db \
+# Paso 1 — SOLO Registraduría (1 llamada OCR; acta de segunda vuelta = 1 sola página de votos)
+python leer_registraduria.py datos/registraduria/cartagena_21_01_13_registraduria.pdf actas.db \
   --solo-pagina-1
 # Al terminar imprime tabla de votos leídos y el siguiente comando
 
@@ -93,25 +104,21 @@ python leer_registraduria.py datos/registraduria/21_01_13_registraduria.pdf acta
 python ver_acta.py actas.db --fuente registraduria
 
 # Paso 3 — Testigo (otra llamada OCR, cuando tengas cuota)
-python leer_testigos.py datos/testigos/21_01_13_testigo.pdf actas.db \
+python leer_testigos.py datos/testigos/cartagena_21_01_13_testigo.pdf actas.db \
   --tipo claveros --solo-pagina-1
 
 # Paso 4 — Comparar
-python comparar.py actas.db comparacion_21_01_13.xlsx
+python comparar.py actas.db comparacion_cartagena_21_01_13.xlsx
 ```
 
-`--solo-pagina-1` = solo candidatos 1–7 (más barato). Si solo cargaste la oficial y
-corres `comparar.py`, te muestra el contenido de la Registraduría y avisa que falta el testigo.
+`--solo-pagina-1` = solo la página de candidatos/totales, sin la hoja de firmas (más
+barato: 1 OCR por acta). Si solo cargaste la oficial y corres `comparar.py`, te muestra
+el contenido de la Registraduría y avisa que falta el testigo.
 
-### 6. Resultado esperado (pág. 1, candidatos 1–7)
+### 6. Resultado esperado
 
-| Campo | Valor esperado |
-|-------|----------------|
-| c1 (Cepeda) | 130 |
-| c2 (Claudia López) | 3 |
-| c4 (Abelardo) | 77 |
-| c3, c5, c6, c7 | 0 |
-
+Define aquí el resultado esperado de tu par de prueba real de segunda vuelta (c1, c2,
+blanco, nulos, no_marcados) una vez lo proceses, para detectar regresiones futuras.
 Si la API respondió bien, ambas fuentes deberían coincidir y el Excel no tendrá
 discrepancias en esas columnas. Revisa la consola: cada acta muestra confianza, inliers
 de alineación e informe OCR (`OK:` / `REVISAR:`).
@@ -134,8 +141,8 @@ Para probar instalación y calidad del escaneo **sin gastar Gemini**:
 
 ```bash
 # Solo capa 1: alinea, reporta inliers, guarda imagen en debug/
-python validar_alineacion.py datos/registraduria/21_01_13_registraduria.pdf --solo-pagina-1
-python validar_alineacion.py datos/testigos/21_01_13_testigo.pdf --solo-pagina-1
+python validar_alineacion.py datos/registraduria/cartagena_21_01_13_registraduria.pdf --solo-pagina-1
+python validar_alineacion.py datos/testigos/cartagena_21_01_13_testigo.pdf --solo-pagina-1
 
 # Ver qué hay en la base (sin re-OCR)
 python ver_acta.py actas.db --fuente registraduria
@@ -166,9 +173,9 @@ Pendiente: app Windows, DB en nube, recorte por casilla (ver `PLAN_PASO_A_PASO.m
 
 ```
 e14/                    paquete con la lógica
-  modelo.py             contrato ActaE14 + 13 candidatos
+  modelo.py             contrato ActaE14 + 2 candidatos (segunda vuelta)
   almacen.py            SQLite (actas.db)
-  mesa.py               código zona_puesto_mesa y emparejamiento
+  mesa.py               código municipio_zona_puesto_mesa y emparejamiento
   alineacion.py         CAPA 1: SIFT + homografía vs plantilla
   preprocess.py         recorte de negro, zoom, CLAHE antes del OCR
   ocr.py                CAPA 2: Gemini / GPT / manual
@@ -180,10 +187,10 @@ leer_registraduria.py   SCRIPT 2: oficial PDF → tabla
 comparar.py             SCRIPT 3: cruza fuentes → Excel
 probar_api.py           ping mínimo a Gemini/GPT
 cli_args.py             flags --tipo, --codigo, --solo-pagina-1
-plantillas/             E-14 en blanco oficial (alineación)
+plantillas/             E-14 en blanco oficial de segunda vuelta (alineación)
 datos/
-  testigos/             E-14 del testigo (incluye par de prueba 21_01_13)
-  registraduria/        E-14 oficial (incluye par de prueba 21_01_13)
+  testigos/             E-14 del testigo (par de prueba 21_01_13 es de primera vuelta)
+  registraduria/        E-14 oficial (idem)
 ejemplos/               CSV de ejemplo
 ```
 
@@ -194,14 +201,21 @@ ejemplos/               CSV de ejemplo
 **Formato recomendado:**
 
 ```
-datos/testigos/ZONA_PUESTO_MESA_testigo.pdf
-datos/registraduria/ZONA_PUESTO_MESA_registraduria.pdf
+datos/testigos/MUNICIPIO_ZONA_PUESTO_MESA_testigo.pdf
+datos/registraduria/MUNICIPIO_ZONA_PUESTO_MESA_registraduria.pdf
 ```
 
-Ejemplo: `21_01_13_testigo.pdf` ↔ `21_01_13_registraduria.pdf` → mesa `21_01_13`.
+Ejemplo: `cartagena_21_01_13_testigo.pdf` ↔ `cartagena_21_01_13_registraduria.pdf` →
+mesa `cartagena_21_01_13`.
+
+El municipio es obligatorio (no solo zona_puesto_mesa) porque, al procesar un
+departamento completo, la numeración de zona/puesto/mesa se repite entre
+municipios distintos — sin el municipio en la clave, el comparador fusionaría
+mesas de lugares distintos que comparten el mismo número.
 
 **No uses** nombres largos tipo `88-128-15-85-001.pdf` salvo que declares `--codigo`
-manualmente: el parser de zona/puesto/mesa espera tres segmentos numéricos.
+manualmente: el parser espera el municipio seguido de tres segmentos numéricos
+(zona, puesto, mesa).
 
 ---
 
@@ -210,8 +224,8 @@ manualmente: el parser de zona/puesto/mesa espera tres segmentos numéricos.
 | Flag | Uso |
 |------|-----|
 | `--tipo claveros\|delegados\|transmision` | De qué **copia** del E-14 se leyeron los votos |
-| `--codigo 21_01_13` | Forzar código de mesa (un solo archivo) |
-| `--solo-pagina-1` / `--solo-p1` | Solo candidatos 1–7; 1 OCR por acta; más barato |
+| `--codigo cartagena_21_01_13` | Forzar código de mesa (un solo archivo) |
+| `--solo-pagina-1` / `--solo-p1` | Solo la página de candidatos/totales (sin firmas); 1 OCR por acta |
 | `[actas.db]` | Base SQLite de salida (default: `actas.db`) |
 
 Por defecto: testigos sin `--tipo` → `desconocido`; registraduría → `delegados`.
@@ -263,4 +277,6 @@ difieren, o la alineación fue pobre (pocos inliers).
 - `.env` (claves)
 - `actas.db`, `*.xlsx` (salidas generadas)
 - `debug/` (imágenes de depuración)
-- PDFs en `datos/` **excepto** el par de prueba `21_01_13_*` (whitelist en `.gitignore`)
+- PDFs en `datos/` **excepto** el par de prueba `21_01_13_*` (whitelist en `.gitignore`;
+  ese par es de primera vuelta, solo sirve para probar instalación, no alinea contra la
+  plantilla de segunda vuelta)

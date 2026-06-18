@@ -14,12 +14,12 @@ from pathlib import Path
 
 import cv2
 
-from e14.alineacion import Alineador, LAYOUT_CANDIDATOS_1_7
+from e14.alineacion import Alineador, LAYOUT_ACTA_COMPLETA
 from e14.lectura import cargar_paginas
 from e14.mesa import codigo_mesa_desde_archivo, etiqueta_mesa
 from e14.preprocess import mejorar_para_ocr
 
-PLANTILLA = "plantillas/muestra-formulario-e-14.pdf"
+PLANTILLA = "plantillas/muestra-formulario-e14-segunda-vuelta.pdf"
 SALIDA_DIR = Path("debug")
 
 
@@ -28,7 +28,7 @@ def main():
     entrada: Path | None = None
     for a in sys.argv[1:]:
         if a in ("--solo-pagina-1", "--solo-p1"):
-            layouts = [LAYOUT_CANDIDATOS_1_7]
+            layouts = [LAYOUT_ACTA_COMPLETA]
         elif not a.startswith("-") and entrada is None:
             entrada = Path(a)
     if entrada is None:

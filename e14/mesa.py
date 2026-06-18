@@ -2,9 +2,14 @@
 Identificación de mesa para emparejar testigo ↔ Registraduría.
 
 Convención de archivos (economiza OCR: solo procesas pares que existen en ambas carpetas):
-    datos/testigos/21_01_13_testigo.pdf
-    datos/registraduria/21_01_13_registraduria.pdf
-    → codigo_mesa = "21_01_13"  (zona 21, puesto 01, mesa 13)
+    datos/testigos/cartagena_21_01_13_testigo.pdf
+    datos/registraduria/cartagena_21_01_13_registraduria.pdf
+    → codigo_mesa = "cartagena_21_01_13"  (municipio Cartagena, zona 21, puesto 01, mesa 13)
+
+Se incluye el MUNICIPIO en el código porque zona/puesto/mesa se numeran dentro
+de cada municipio: dos municipios distintos del mismo departamento pueden tener
+ambos una "zona 21, puesto 01, mesa 13". Sin el municipio, el comparador
+fusionaría por error mesas de municipios distintos que comparten ese número.
 
 El comparador cruza por ese mismo `codigo_mesa`.
 """
@@ -23,8 +28,8 @@ _SUFIJOS_FUENTE = (
 
 def codigo_mesa_desde_archivo(ruta: str | Path) -> str:
     """
-    Extrae el código de par (zona_puesto_mesa) quitando el sufijo de fuente.
-    21_01_13_testigo.pdf → 21_01_13
+    Extrae el código de par (municipio_zona_puesto_mesa) quitando el sufijo de fuente.
+    cartagena_21_01_13_testigo.pdf → cartagena_21_01_13
     """
     stem = Path(ruta).stem
     bajo = stem.lower()
@@ -34,23 +39,34 @@ def codigo_mesa_desde_archivo(ruta: str | Path) -> str:
     return stem
 
 
-def zona_puesto_mesa_desde_codigo(codigo: str) -> dict[str, str]:
-    """21_01_13 → zona=21, puesto=01, mesa=13."""
+def municipio_zona_puesto_mesa_desde_codigo(codigo: str) -> dict[str, str]:
+    """
+    cartagena_21_01_13 → municipio=cartagena, zona=21, puesto=01, mesa=13.
+
+    Acepta el municipio como texto (no numérico) seguido de 3 segmentos
+    numéricos (zona, puesto, mesa).
+    """
     norm = codigo.strip().replace("-", "_")
     partes = norm.split("_")
-    if len(partes) >= 3 and all(p.isdigit() for p in partes[:3]):
-        return {"zona": partes[0], "puesto": partes[1], "mesa": partes[2]}
-    m = re.match(r"^(\d+)[_\-](\d+)[_\-](\d+)", norm)
+    if len(partes) >= 4 and all(p.isdigit() for p in partes[-3:]):
+        municipio = "_".join(partes[:-3])
+        zona, puesto, mesa = partes[-3:]
+        return {"municipio": municipio, "zona": zona, "puesto": puesto, "mesa": mesa}
+    m = re.match(r"^(.+?)[_\-](\d+)[_\-](\d+)[_\-](\d+)$", norm)
     if m:
-        return {"zona": m.group(1), "puesto": m.group(2), "mesa": m.group(3)}
+        return {
+            "municipio": m.group(1), "zona": m.group(2),
+            "puesto": m.group(3), "mesa": m.group(4),
+        }
     return {}
 
 
 def etiqueta_mesa(codigo: str, meta: dict[str, str] | None = None) -> str:
-    """Texto legible: Zona 21 · Puesto 01 · Mesa 13."""
-    meta = meta or zona_puesto_mesa_desde_codigo(codigo)
+    """Texto legible: Cartagena · Zona 21 · Puesto 01 · Mesa 13."""
+    meta = meta or municipio_zona_puesto_mesa_desde_codigo(codigo)
     if meta:
-        return f"Zona {meta['zona']} · Puesto {meta['puesto']} · Mesa {meta['mesa']}"
+        municipio = meta["municipio"].replace("_", " ").title()
+        return f"{municipio} · Zona {meta['zona']} · Puesto {meta['puesto']} · Mesa {meta['mesa']}"
     return codigo
 
 
