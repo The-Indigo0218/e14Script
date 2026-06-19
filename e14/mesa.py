@@ -39,6 +39,37 @@ def codigo_mesa_desde_archivo(ruta: str | Path) -> str:
     return stem
 
 
+def _segmento_canonico(valor: str | int) -> str:
+    """Un segmento del código: si es numérico, sin ceros a la izquierda; si no, en minúscula."""
+    s = str(valor).strip()
+    return str(int(s)) if s.lstrip("-").isdigit() else s.lower()
+
+
+def codigo_canonico(municipio: str | int, zona: str | int,
+                    puesto: str | int, mesa: str | int) -> str:
+    """
+    Construye el código canónico de la nomenclatura NuMunicipio-zona-puesto-mesa.
+
+    Los segmentos numéricos se normalizan SIN ceros a la izquierda, para que
+    `1_21_01_13` (de un nombre de archivo) y `1_21_1_13` (del catálogo/Excel)
+    representen la MISMA mesa y crucen correctamente.
+        codigo_canonico(1, 21, 1, 13) -> "1_21_1_13"
+    """
+    return "_".join(_segmento_canonico(x) for x in (municipio, zona, puesto, mesa))
+
+
+def normalizar_codigo(codigo: str) -> str:
+    """
+    Lleva cualquier código (con `_` o `-`, con o sin ceros) a su forma canónica.
+        "1-21-01-13" -> "1_21_1_13"   ;   "1_21_01_13" -> "1_21_1_13"
+    Si no calza el patrón municipio-zona-puesto-mesa, devuelve el texto en minúscula.
+    """
+    meta = municipio_zona_puesto_mesa_desde_codigo(codigo)
+    if meta:
+        return codigo_canonico(meta["municipio"], meta["zona"], meta["puesto"], meta["mesa"])
+    return str(codigo).strip().lower()
+
+
 def municipio_zona_puesto_mesa_desde_codigo(codigo: str) -> dict[str, str]:
     """
     cartagena_21_01_13 → municipio=cartagena, zona=21, puesto=01, mesa=13.
@@ -70,15 +101,21 @@ def etiqueta_mesa(codigo: str, meta: dict[str, str] | None = None) -> str:
     return codigo
 
 
-def listar_codigos_en_carpeta(carpeta: str | Path) -> set[str]:
-    """Códigos de par detectados en los nombres de archivo de una carpeta."""
+def listar_codigos_en_carpeta(carpeta: str | Path, normalizar: bool = False) -> set[str]:
+    """
+    Códigos de par detectados en los nombres de archivo de una carpeta.
+
+    Con `normalizar=True` devuelve los códigos en forma canónica (sin ceros a la
+    izquierda), para que crucen contra los códigos del catálogo.
+    """
     carpeta = Path(carpeta)
     if not carpeta.is_dir():
         return set()
     codigos: set[str] = set()
     for ext in ("*.pdf", "*.png", "*.jpg", "*.jpeg"):
         for f in carpeta.glob(ext):
-            codigos.add(codigo_mesa_desde_archivo(f))
+            cod = codigo_mesa_desde_archivo(f)
+            codigos.add(normalizar_codigo(cod) if normalizar else cod)
     return codigos
 
 
