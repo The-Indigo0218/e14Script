@@ -106,7 +106,7 @@ def _prompt(cols: list[str]) -> str:
     lineas = "\n".join(f'  - "{c}" = {_etiqueta(c)}' for c in cols)
     return (
         "Eres un lector de actas electorales colombianas E-14 (segunda vuelta "
-        "presidencial 2026, solo 2 candidatos). En la imagen, cada candidato/categoría "
+        "presidencial, 2 candidatos). En la imagen, cada candidato/categoría "
         "tiene casillas "
         "con un dígito manuscrito por cajita (ej. '1','0','6' = 106).\n\n"
         "Lee el NÚMERO de votos de cada uno de estos campos:\n"
