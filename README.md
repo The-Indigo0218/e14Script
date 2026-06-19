@@ -5,6 +5,12 @@ electoral), pasarlas a una tabla común y **comparar** para detectar discrepanci
 Todo lo dudoso (confianza < 80%, suma que no cuadra o fuentes que difieren) se
 **marca para revisión humana**.
 
+El trabajo se organiza **por lotes**: un **lote = un municipio**. Una sola instancia
+procesa un municipio a la vez (volumen acotado, modular). El **Excel "Mesa a Mesa" de
+la Registraduría** es el *catálogo* (universo de mesas) que dice qué número le toca a
+cada municipio y cuántas mesas tiene. Con eso se mide la **cobertura** (cuántas mesas
+ya tenemos vs cuántas faltan) y se orquesta la auditoría del lote (`auditar.py`).
+
 > Lee primero `VISION_Y_DECISIONES.md` (el porqué), `PLAN_PASO_A_PASO.md` (roadmap) y
 > **`GUIA_ARCHIVOS.md`** (qué hace cada archivo del repo).
 
@@ -66,37 +72,77 @@ lectores en bucle mientras la cuota esté agotada.
 El repo trae un par de **primera vuelta** (Cartagena, zona 21, puesto 01, mesa 13)
 que sirvió para probar el pipeline, pero **ya no alinea** contra la plantilla de
 segunda vuelta (formato distinto: 2 candidatos en vez de 13). Para volver a
-probar de punta a punta, coloca un par real de segunda vuelta:
+probar de punta a punta, coloca un par real de segunda vuelta en la **carpeta del
+lote** (un municipio):
 
 ```
-datos/testigos/MUNICIPIO_ZONA_PUESTO_MESA_testigo.pdf
-datos/registraduria/MUNICIPIO_ZONA_PUESTO_MESA_registraduria.pdf
+datos/<NN_nombre>/testigos/<NuMunicipio>_<ZONA>_<PUESTO>_<MESA>_testigo.pdf
+datos/<NN_nombre>/registraduria/<NuMunicipio>_<ZONA>_<PUESTO>_<MESA>_registraduria.pdf
 ```
 
-**Convención de nombres:** `MUNICIPIO_ZONA_PUESTO_MESA` + sufijo de fuente. El
-municipio es obligatorio porque zona/puesto/mesa se numeran **dentro de cada
-municipio** — al procesar un departamento completo (varios municipios), dos
-mesas de municipios distintos pueden compartir el mismo número de
-zona_puesto_mesa, y sin el municipio el comparador las fusionaría por error.
+**Nomenclatura: `NuMunicipio-zona-puesto-mesa`** (separadas por `_` o `-`).
 
-| Archivo | `codigo_mesa` resultante |
+- **`NuMunicipio`** es el **número de municipio de la Registraduría** (el del Excel
+  "Mesa a Mesa", columna `MUN`), **no** el código DANE. Ojo: en esa codificación
+  Bolívar es el **departamento 5** y los municipios **no son consecutivos**
+  (Cartagena = 1, Magangué = 28, Mompós = 43…). Ver `e14/catalogo.py`.
+- El municipio es **obligatorio** porque zona/puesto/mesa se numeran **dentro de cada
+  municipio**: sin él, el comparador fusionaría mesas de municipios distintos que
+  comparten el mismo zona_puesto_mesa.
+- Los **ceros a la izquierda no importan**: `1_21_01_13` y `1_21_1_13` son la misma
+  mesa (se normalizan al código canónico). Así el nombre de archivo cruza con el
+  catálogo aunque uno traiga ceros y el otro no.
+
+| Archivo | `codigo_mesa` (canónico) |
 |---------|--------------------------|
-| `cartagena_21_01_13_testigo.pdf` | `cartagena_21_01_13` |
-| `cartagena_21_01_13_registraduria.pdf` | `cartagena_21_01_13` |
+| `1_21_01_13_testigo.pdf` | `1_21_1_13` |
+| `1_21_01_13_registraduria.pdf` | `1_21_1_13` |
 
-El comparador cruza por ese mismo `codigo_mesa`. Ver `e14/mesa.py`.
+El comparador cruza por ese código canónico. Ver `e14/mesa.py`
+(`codigo_canonico`, `normalizar_codigo`).
+
+> Las carpetas del lote (`datos/<NN_nombre>/…`) las crea automáticamente
+> `cobertura.py --crear-carpetas` o `auditar.py` (ej. `datos/01_cartagena/`).
 
 **Plantilla:** coloca el PDF oficial en blanco de segunda vuelta en
 `plantillas/muestra-formulario-e14-segunda-vuelta.pdf` (ver `e14/alineacion.py`
 si el layout real no entra en una sola página).
 
-### 5. Flujo recomendado: primero oficial, luego testigo
+### 5. Auditar un lote completo (camino recomendado)
+
+Con el **Excel de la Registraduría** como catálogo, primero ves cuántas mesas hay y
+cuántas tenés listas, y luego auditás el lote de un municipio con un solo comando.
+
+```bash
+# a) Tablero de cobertura de TODO el departamento (no gasta OCR)
+python cobertura.py "ruta/al/Bolivar_Mesa_Mesa_2026 Presidencial.xlsx"
+
+# b) Detalle de un lote y crea sus carpetas (datos/01_cartagena/…)
+python cobertura.py "ruta/al/…xlsx" --municipio 1 --crear-carpetas
+#   -> ahí colocas los PDFs: datos/01_cartagena/{testigos,registraduria}/
+
+# c) Ver qué se procesaría (sin gastar OCR)
+python auditar.py "ruta/al/…xlsx" --municipio 1 --plan
+
+# d) Auditar el lote: lee pares, guarda en DB y genera el Excel de comparación
+python auditar.py "ruta/al/…xlsx" --municipio 1 --solo-pagina-1 --limite 50
+```
+
+- **Lote = un municipio** (`--municipio`, el `NuMunicipio` del catálogo).
+- `auditar.py` solo procesa las mesas **listas** (testigo **y** oficial presentes),
+  así no se gasta OCR en mesas a medias. `--incluir-parciales` para forzar las demás.
+- **Idempotente**: no reprocesa lo ya leído; `--reauditar` fuerza y **archiva la
+  versión anterior** (historial, ver §re-auditoría). `--limite N` acota el volumen.
+- Internamente reutiliza el pipeline de los scripts de abajo (mismo `leer_acta_pdf`
+  + `comparar`). Esos scripts siguen sirviendo para procesar un archivo suelto.
+
+### 6. Flujo manual por script: primero oficial, luego testigo
 
 **Orden sugerido** (1 llamada API por script, sin bucles):
 
 ```bash
 # Paso 1 — SOLO Registraduría (1 llamada OCR; acta de segunda vuelta = 1 sola página de votos)
-python leer_registraduria.py datos/registraduria/cartagena_21_01_13_registraduria.pdf actas.db \
+python leer_registraduria.py datos/registraduria/21_01_13_registraduria.pdf actas.db \
   --solo-pagina-1
 # Al terminar imprime tabla de votos leídos y el siguiente comando
 
@@ -104,18 +150,22 @@ python leer_registraduria.py datos/registraduria/cartagena_21_01_13_registraduri
 python ver_acta.py actas.db --fuente registraduria
 
 # Paso 3 — Testigo (otra llamada OCR, cuando tengas cuota)
-python leer_testigos.py datos/testigos/cartagena_21_01_13_testigo.pdf actas.db \
+python leer_testigos.py datos/testigos/21_01_13_testigo.pdf actas.db \
   --tipo claveros --solo-pagina-1
 
 # Paso 4 — Comparar
-python comparar.py actas.db comparacion_cartagena_21_01_13.xlsx
+python comparar.py actas.db comparacion_21_01_13.xlsx
 ```
+
+> El par de prueba `21_01_13_*` es **legacy** (solo zona_puesto_mesa, sin
+> `NuMunicipio` ni carpeta de lote). Sigue sirviendo para probar instalación. Para
+> datos reales usa la nomenclatura numérica completa y el flujo por lote de §5.
 
 `--solo-pagina-1` = solo la página de candidatos/totales, sin la hoja de firmas (más
 barato: 1 OCR por acta). Si solo cargaste la oficial y corres `comparar.py`, te muestra
 el contenido de la Registraduría y avisa que falta el testigo.
 
-### 6. Resultado esperado
+### 7. Resultado esperado
 
 Define aquí el resultado esperado de tu par de prueba real de segunda vuelta (c1, c2,
 blanco, nulos, no_marcados) una vez lo proceses, para detectar regresiones futuras.
@@ -123,26 +173,27 @@ Si la API respondió bien, ambas fuentes deberían coincidir y el Excel no tendr
 discrepancias en esas columnas. Revisa la consola: cada acta muestra confianza, inliers
 de alineación e informe OCR (`OK:` / `REVISAR:`).
 
-### 7. Procesar carpetas completas
+### 8. Procesar carpetas completas (bajo nivel)
 
-Cuando quieras todas las mesas emparejadas de una carpeta:
+Para todas las mesas emparejadas de una carpeta suelta (sin pasar por `auditar.py`):
 
 ```bash
-python leer_testigos.py datos/testigos actas.db --tipo claveros
-python leer_registraduria.py datos/registraduria actas.db
+python leer_testigos.py datos/01_cartagena/testigos actas.db --tipo claveros
+python leer_registraduria.py datos/01_cartagena/registraduria actas.db
 python comparar.py actas.db comparacion_E14.xlsx
 ```
 
 `comparar.py` lista al inicio qué pares existen en ambas carpetas y cuáles faltan.
+Para el flujo por lote con cobertura y control de volumen, prefiere `auditar.py` (§5).
 
-### 8. Validación 100% local (sin API, sin cuota)
+### 9. Validación 100% local (sin API, sin cuota)
 
 Para probar instalación y calidad del escaneo **sin gastar Gemini**:
 
 ```bash
 # Solo capa 1: alinea, reporta inliers, guarda imagen en debug/
-python validar_alineacion.py datos/registraduria/cartagena_21_01_13_registraduria.pdf --solo-pagina-1
-python validar_alineacion.py datos/testigos/cartagena_21_01_13_testigo.pdf --solo-pagina-1
+python validar_alineacion.py datos/registraduria/21_01_13_registraduria.pdf --solo-pagina-1
+python validar_alineacion.py datos/testigos/21_01_13_testigo.pdf --solo-pagina-1
 
 # Ver qué hay en la base (sin re-OCR)
 python ver_acta.py actas.db --fuente registraduria
@@ -161,11 +212,17 @@ Sin `GEMINI_API_KEY`, los lectores usan backend **manual**: alinean pero dejan v
 | 2. OCR (Gemini/GPT) | `e14/ocr.py` | ✅ (requiere clave en `.env`) |
 | 3. Comparación | `e14/comparador.py`, `comparar.py` | ✅ |
 | 4. Validación (suma/confianza) | lectores + `e14/lectura.py` | ✅ |
-| Emparejamiento por mesa | `e14/mesa.py` | ✅ |
+| Nomenclatura + emparejamiento por mesa | `e14/mesa.py` | ✅ |
+| Catálogo (Excel → universo) | `e14/catalogo.py`, `cobertura.py` | ✅ |
+| Cobertura por lote | `e14/cobertura.py`, `cobertura.py` | ✅ |
+| Orquestador de lote | `auditar.py` | ✅ |
 | Preprocesamiento OCR | `e14/preprocess.py` | ✅ |
-| Almacén | `e14/almacen.py` (SQLite) | ✅ |
+| Almacén + versionado de re-auditoría | `e14/almacen.py` (SQLite) | ✅ |
+| Tests | `tests/` (pytest, 30) | ✅ |
 
 Pendiente: app Windows, DB en nube, recorte por casilla (ver `PLAN_PASO_A_PASO.md`).
+
+Correr los tests: `pytest -q` (o `.venv/bin/python -m pytest -q`).
 
 ---
 
@@ -174,23 +231,31 @@ Pendiente: app Windows, DB en nube, recorte por casilla (ver `PLAN_PASO_A_PASO.m
 ```
 e14/                    paquete con la lógica
   modelo.py             contrato ActaE14 + 2 candidatos (segunda vuelta)
-  almacen.py            SQLite (actas.db)
-  mesa.py               código municipio_zona_puesto_mesa y emparejamiento
+  almacen.py            SQLite (actas.db) + historial de re-auditoría
+  mesa.py               nomenclatura NuMunicipio_zona_puesto_mesa, código canónico, emparejamiento
+  catalogo.py           Excel "Mesa a Mesa" → universo de mesas por municipio
+  cobertura.py          cruza catálogo vs archivos presentes (estados del lote)
   alineacion.py         CAPA 1: SIFT + homografía vs plantilla
   preprocess.py         recorte de negro, zoom, CLAHE antes del OCR
   ocr.py                CAPA 2: Gemini / GPT / manual
   evidencia.py          detectar copias visibles en la foto
   lectura.py            PDF → ActaE14 (une capas 1 y 2)
   comparador.py         CAPA 3: lógica de comparación
+auditar.py              ORQUESTADOR: audita un lote (municipio) de punta a punta
+cobertura.py            SCRIPT: tablero de cobertura / detalle de un lote
 leer_testigos.py        SCRIPT 1: testigo (CSV o PDF) → tabla
 leer_registraduria.py   SCRIPT 2: oficial PDF → tabla
 comparar.py             SCRIPT 3: cruza fuentes → Excel
 probar_api.py           ping mínimo a Gemini/GPT
 cli_args.py             flags --tipo, --codigo, --solo-pagina-1
+tests/                  pruebas pytest (catálogo, cobertura, orquestador, almacén, mesa)
 plantillas/             E-14 en blanco oficial de segunda vuelta (alineación)
 datos/
-  testigos/             E-14 del testigo (par de prueba 21_01_13 es de primera vuelta)
-  registraduria/        E-14 oficial (idem)
+  <NN_nombre>/          un LOTE = un municipio (ej. 01_cartagena/)
+    testigos/           E-14 del testigo del municipio
+    registraduria/      E-14 oficial del municipio
+  testigos/             (legacy) par de prueba 21_01_13 (primera vuelta)
+  registraduria/        (legacy) idem
 ejemplos/               CSV de ejemplo
 ```
 
@@ -198,20 +263,21 @@ ejemplos/               CSV de ejemplo
 
 ## Convención de archivos (importante)
 
-**Formato recomendado:**
+**Formato recomendado** (dentro de la carpeta del lote del municipio):
 
 ```
-datos/testigos/MUNICIPIO_ZONA_PUESTO_MESA_testigo.pdf
-datos/registraduria/MUNICIPIO_ZONA_PUESTO_MESA_registraduria.pdf
+datos/<NN_nombre>/testigos/<NuMunicipio>_<ZONA>_<PUESTO>_<MESA>_testigo.pdf
+datos/<NN_nombre>/registraduria/<NuMunicipio>_<ZONA>_<PUESTO>_<MESA>_registraduria.pdf
 ```
 
-Ejemplo: `cartagena_21_01_13_testigo.pdf` ↔ `cartagena_21_01_13_registraduria.pdf` →
-mesa `cartagena_21_01_13`.
+Ejemplo (Cartagena = municipio 1): `1_21_01_13_testigo.pdf` ↔
+`1_21_01_13_registraduria.pdf` → mesa canónica `1_21_1_13`.
 
-El municipio es obligatorio (no solo zona_puesto_mesa) porque, al procesar un
-departamento completo, la numeración de zona/puesto/mesa se repite entre
-municipios distintos — sin el municipio en la clave, el comparador fusionaría
-mesas de lugares distintos que comparten el mismo número.
+- **`NuMunicipio` = número de municipio de la Registraduría** (columna `MUN` del Excel
+  catálogo, **no** DANE). Es obligatorio porque zona/puesto/mesa se repiten entre
+  municipios; sin él, el comparador fusionaría mesas de lugares distintos.
+- Los **ceros a la izquierda son indiferentes** (`1_21_01_13` ≡ `1_21_1_13`): se
+  normalizan al código canónico que también produce el catálogo, así cruzan siempre.
 
 **No uses** nombres largos tipo `88-128-15-85-001.pdf` salvo que declares `--codigo`
 manualmente: el parser espera el municipio seguido de tres segmentos numéricos
@@ -224,11 +290,35 @@ manualmente: el parser espera el municipio seguido de tres segmentos numéricos
 | Flag | Uso |
 |------|-----|
 | `--tipo claveros\|delegados\|transmision` | De qué **copia** del E-14 se leyeron los votos |
-| `--codigo cartagena_21_01_13` | Forzar código de mesa (un solo archivo) |
+| `--codigo 1_21_01_13` | Forzar código de mesa (un solo archivo) |
 | `--solo-pagina-1` / `--solo-p1` | Solo la página de candidatos/totales (sin firmas); 1 OCR por acta |
 | `[actas.db]` | Base SQLite de salida (default: `actas.db`) |
 
 Por defecto: testigos sin `--tipo` → `desconocido`; registraduría → `delegados`.
+
+## Flags de cobertura y auditoría por lote
+
+`cobertura.py <excel> [--municipio N] [--datos datos] [--crear-carpetas]`
+
+`auditar.py <excel> --municipio N`:
+
+| Flag | Uso |
+|------|-----|
+| `--municipio N` / `-m N` | Lote a auditar (el `NuMunicipio` del catálogo). Obligatorio. |
+| `--plan` | Listar qué mesas se procesarían y salir (**no gasta OCR**) |
+| `--limite N` | Procesar solo las primeras N mesas (control de volumen/costo) |
+| `--reauditar` | Reprocesar mesas ya leídas (archiva la versión anterior) |
+| `--incluir-parciales` | Incluir mesas con una sola fuente (por defecto solo las **listas**) |
+| `--tipo-testigo`, `--solo-pagina-1` | Igual que en los lectores |
+| `--datos`, `--db`, `--salida` | Carpeta base, SQLite y Excel de salida |
+
+## Re-auditoría (historial de versiones)
+
+Re-correr el OCR sobre una mesa ya leída **no pierde** la lectura anterior: antes de
+sobrescribir, la versión previa se archiva en la tabla `actas_historial` (con número de
+versión y fecha). `actas` siempre tiene la versión vigente, así `comparar.py` no cambia.
+La **verificación manual** también se conserva al re-auditar. Ver
+`e14/almacen.py` → `historial()` y `num_versiones()`.
 
 ---
 

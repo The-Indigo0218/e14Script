@@ -112,6 +112,36 @@ Toda casilla/mesa con **confianza por debajo del 80%** se envía a una cola de
   un **servicio propio** (no dentro del .exe, que es descompilable), de cara a reusar
   el sistema en **segunda vuelta**.
 
+### 3.6. Trabajo por lotes (un municipio) con el Excel de la Registraduría como catálogo
+
+Con **una sola instancia** y miles de mesas, no auditamos todo de golpe: la **unidad de
+trabajo es el lote = un municipio**. El usuario elige qué municipio auditar.
+
+- **Por qué un municipio:** mantiene el volumen acotado y el costo de OCR controlable, y
+  permite avanzar de forma modular y medible (Cartagena, ~2.517 mesas, primero).
+- **El Excel "Mesa a Mesa" de la Registraduría es el *catálogo*** (universo de mesas), no
+  la entrada de actas. De ahí salen: el **número de cada municipio**, cuántas mesas tiene,
+  y la **cobertura** (cuántas ya tenemos vs cuántas faltan). Solo se gasta OCR en las
+  mesas **listas** (con testigo y oficial presentes).
+
+#### Codificación: la de la **Registraduría**, NO DANE
+
+El Excel usa los **códigos electorales de la Registraduría** (en él **Bolívar = 5** y los
+municipios **no son consecutivos**), distintos del estándar **DANE DIVIPOLA** (Bolívar =
+13). Se eligió la codificación de la **Registraduría** como base de la nomenclatura
+`NuMunicipio-zona-puesto-mesa` porque es **la misma fuente** de las actas E-14 que
+auditamos; mezclarla con DANE introduciría errores de cruce. Los códigos de archivo se
+normalizan (sin ceros a la izquierda) para casar siempre con el catálogo.
+
+### 3.7. El ESTADO vive en la DB; la evidencia no se mueve; la re-auditoría se versiona
+
+- Los **PDFs son evidencia inmutable**: entran a `datos/<municipio>/{testigos,registraduria}/`
+  y **no se mueven**. El estado de avance (pendiente, leída, en revisión) vive en la **DB**,
+  no en carpetas (mover archivos duplicaría el estado y se desincronizaría).
+- **Re-auditar no pierde lo anterior:** antes de sobrescribir una lectura, la versión previa
+  se archiva en `actas_historial` (con número de versión y fecha). `actas` mantiene la
+  versión vigente, así el comparador no cambia. La verificación manual se conserva.
+
 ---
 
 ## 4. Cómo se garantiza la confiabilidad (doble validación)

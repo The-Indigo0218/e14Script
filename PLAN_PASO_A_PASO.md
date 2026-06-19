@@ -37,8 +37,10 @@ auditoria-e14/                 (este repositorio)
 
   e14/                         paquete con la lógica
     modelo.py                  CONTRATO: ActaE14 + columnas de votos
-    almacen.py                 SQLite (luego nube)
-    mesa.py                    código municipio_zona_puesto_mesa + emparejamiento carpetas
+    almacen.py                 SQLite (luego nube) + historial de re-auditoría
+    mesa.py                    nomenclatura NuMunicipio_zona_puesto_mesa, código canónico, emparejamiento
+    catalogo.py                Excel "Mesa a Mesa" → universo de mesas por municipio
+    cobertura.py               cruza catálogo vs archivos presentes (estados del lote)
     alineacion.py              CAPA 1: SIFT + homografía
     preprocess.py              recorte/zoom/CLAHE antes del OCR
     ocr.py                     CAPA 2: Gemini / GPT / manual
@@ -46,11 +48,18 @@ auditoria-e14/                 (este repositorio)
     lectura.py                 orquestador PDF → ActaE14
     comparador.py              CAPA 3: comparación
 
-  leer_testigos.py             SCRIPT 1: testigo (CSV o PDF) → tabla
-  leer_registraduria.py        SCRIPT 2: oficial → capa1 → OCR → tabla
-  comparar.py                  SCRIPT 3: cruza fuentes → Excel
+  auditar.py                   ORQUESTADOR: audita un lote (municipio) de punta a punta
+  cobertura.py                 SCRIPT: tablero de cobertura / detalle de un lote (sin OCR)
+  leer_testigos.py             SCRIPT: testigo (CSV o PDF) → tabla
+  leer_registraduria.py        SCRIPT: oficial → capa1 → OCR → tabla
+  comparar.py                  SCRIPT: cruza fuentes → Excel
   probar_api.py                verificar clave antes de OCR masivo
+  tests/                       pruebas pytest (catálogo, cobertura, orquestador, almacén, mesa)
 ```
+
+**Unidad de trabajo: el LOTE = un municipio.** El Excel de la Registraduría es el
+catálogo (universo de mesas). `cobertura.py` mide qué falta; `auditar.py` audita el
+lote completo reutilizando el pipeline (`leer_acta_pdf` + `comparar`).
 
 **Contrato compartido:** los 3 scripts hablan el mismo "idioma": el objeto `ActaE14`
 (una fila por mesa y por fuente). Mientras se respete ese contrato, cada parte se
@@ -61,10 +70,17 @@ puede desarrollar y probar por separado ("divide y vencerás").
 ## 2. Flujo de datos
 
 ```
-   E-14 testigo ──[Script 1]──┐
-                              ├──► tabla común (DB) ──[Script 3]──► Excel discrepancias
-   E-14 oficial ──[Script 2]──┘
+   Excel Registraduría ──[catálogo]──► universo de mesas por municipio
+                                           │
+                                  [cobertura.py] mide qué falta
+                                           │
+   E-14 testigo ───┐                       ▼
+                   ├──[auditar.py: lee pares LISTOS]──► tabla común (DB) ──► Excel discrepancias
+   E-14 oficial ───┘            (reutiliza leer_acta_pdf + comparar)
 ```
+
+`auditar.py --municipio N` hace todo el lote; los scripts sueltos (`leer_testigos.py`,
+`leer_registraduria.py`, `comparar.py`) siguen sirviendo para un archivo a la vez.
 
 Cada fila de la tabla: `codigo_mesa`, `fuente` (testigo|registraduria), votos
 `c1..c13`, `blanco`, `nulos`, `no_marcados`, totales, **confianza**,
@@ -77,8 +93,12 @@ Cada fila de la tabla: `codigo_mesa`, `fuente` (testigo|registraduria), votos
 | Componente | Estado | Notas |
 |---|---|---|
 | Modelo de datos (`modelo.py`) | ✅ | `ActaE14`, `tipo_acta`, `copias_en_evidencia` |
-| Almacén SQLite (`almacen.py`) | ✅ | Tabla `actas`, clave (mesa, fuente) |
-| Emparejamiento (`mesa.py`) | ✅ | `21_01_13_testigo.pdf` ↔ `21_01_13_registraduria.pdf` |
+| Almacén SQLite (`almacen.py`) | ✅ | Tabla `actas`, clave (mesa, fuente) + `actas_historial` (re-auditoría) |
+| Nomenclatura + emparejamiento (`mesa.py`) | ✅ | `1_21_01_13_*.pdf` → canónico `1_21_1_13` |
+| Catálogo desde Excel (`catalogo.py`) | ✅ | Universo por municipio, `MUN→nombre` (Registraduría, no DANE) |
+| Cobertura por lote (`cobertura.py`) | ✅ | listas / solo_testigo / faltan_ambas / fuera_de_catalogo |
+| Orquestador de lote (`auditar.py`) | ✅ | `--municipio`, `--plan`, `--limite`, `--reauditar` |
+| Tests (`tests/`) | ✅ | pytest, 30 pruebas (fixture sintético, sin API) |
 | Capa 1 alineación (`alineacion.py`) | ✅ | Probada mesa 21_01_13; QA por inliers |
 | Preprocesamiento (`preprocess.py`) | ✅ | Recorte negro + zoom para OCR |
 | Capa 2 OCR (`ocr.py`) | ✅ | Gemini/GPT conectados; informe API en notas |
@@ -94,6 +114,13 @@ Cada fila de la tabla: `codigo_mesa`, `fuente` (testigo|registraduria), votos
 ---
 
 ## 4. Pasos pendientes (en orden)
+
+### ~~Trabajo por lote (catálogo → cobertura → orquestador → versionado)~~ ✅ HECHO
+- `e14/catalogo.py` lee el Excel de la Registraduría como universo de mesas por municipio.
+- `cobertura.py` cruza catálogo vs archivos y reporta qué falta por lote.
+- `auditar.py` audita un municipio de punta a punta (selección de listas, `--limite`, `--plan`).
+- `e14/almacen.py` versiona la re-auditoría (`actas_historial`).
+- `tests/` cubre todo lo anterior (pytest).
 
 ### Paso A — ~~Conectar el OCR (capa 2) con Gemini~~ ✅ HECHO
 Ver `e14/ocr.py` (`BackendGemini`), `probar_api.py` y guía de reproducción en `README.md`.
@@ -125,20 +152,31 @@ Ver `e14/ocr.py` (`BackendGemini`), `probar_api.py` y guía de reproducción en 
 
 Ver **`README.md` → Guía de reproducción** (paso a paso completo).
 
-Resumen rápido (mesa Cartagena 21_01_13, candidatos 1–7):
+Setup (una vez):
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env    # pegar GEMINI_API_KEY
 python probar_api.py
+pytest -q               # 30 pruebas, no necesitan API
+```
 
+Flujo por lote (datos reales, recomendado):
+
+```bash
+python cobertura.py "ruta/al/…Mesa_Mesa…xlsx" --municipio 1 --crear-carpetas
+# colocar los PDFs en datos/01_cartagena/{testigos,registraduria}/
+python auditar.py "ruta/al/…xlsx" --municipio 1 --solo-pagina-1
+```
+
+Smoke test con el par legacy `21_01_13` (candidatos 1–7; esperado pág. 1: c1=130, c2=3, c4=77):
+
+```bash
 python leer_testigos.py datos/testigos/21_01_13_testigo.pdf actas.db --tipo claveros --solo-pagina-1
 python leer_registraduria.py datos/registraduria/21_01_13_registraduria.pdf actas.db --solo-pagina-1
 python comparar.py actas.db comparacion_21_01_13.xlsx
 ```
-
-Esperado pág. 1: c1=130, c2=3, c4=77. Dependencias: `requirements.txt`.
 
 ---
 
