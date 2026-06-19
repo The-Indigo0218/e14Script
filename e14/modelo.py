@@ -12,15 +12,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
 
-# ─── CANDIDATOS PRESIDENCIALES 2026 — SEGUNDA VUELTA ───────────────────────────
+# ─── CANDIDATOS PRESIDENCIALES 2022 — SEGUNDA VUELTA (rama de pruebas) ──────────
 # número (str) -> (nombre, agrupación). SOLO los 2 finalistas pasan a segunda vuelta.
-# Fórmulas completas (según formulario E-14 oficial):
-#   1. Iván Cepeda Castro — vicepresidencial: Aida Quilcué Vivas (Pacto Histórico)
-#   2. Abelardo de la Espriella — vicepresidencial: José Manuel Restrepo
-#      (Defensores de la Patria)
+# Esta rama (pruebas-segunda-vuelta-2022) valida el pipeline con datos REALES de la
+# 2ª vuelta presidencial del 19-jun-2022 (resultados oficiales conocidos):
+#   1. Gustavo Petro Urrego — vicepresidencial: Francia Márquez (Pacto Histórico)
+#   2. Rodolfo Hernández Suárez — vicepresidencial: Marelen Castillo
+#      (Liga de Gobernantes Anticorrupción)
+# IMPORTANTE: el orden c1/c2 DEBE coincidir con el orden de las columnas en el
+# formulario E-14 oficial de 2022. Aquí se asume c1=Petro, c2=Hernández; verificar
+# contra el E-14 real antes de confiar en la comparación (si el formulario invierte
+# el orden, intercambiar estas dos entradas).
 CANDIDATOS: dict[str, tuple[str, str]] = {
-    "1": ("IVÁN CEPEDA CASTRO",      "PACTO HISTÓRICO"),
-    "2": ("ABELARDO DE LA ESPRIELLA", "DEFENSORES DE LA PATRIA"),
+    "1": ("GUSTAVO PETRO URREGO",      "PACTO HISTÓRICO"),
+    "2": ("RODOLFO HERNÁNDEZ SUÁREZ",  "LIGA DE GOBERNANTES ANTICORRUPCIÓN"),
 }
 
 # Categorías de votos NO atribuibles a un candidato
