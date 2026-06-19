@@ -119,6 +119,26 @@ def listar_codigos_en_carpeta(carpeta: str | Path, normalizar: bool = False) -> 
     return codigos
 
 
+def mapa_codigo_archivo(carpeta: str | Path, normalizar: bool = True) -> dict[str, Path]:
+    """
+    {codigo_mesa: ruta} de los documentos de una carpeta. Con `normalizar=True`
+    la clave es el código canónico (para cruzar con el catálogo). Si dos archivos
+    comparten código, gana el primero en orden alfabético (estable).
+    """
+    carpeta = Path(carpeta)
+    if not carpeta.is_dir():
+        return {}
+    mapa: dict[str, Path] = {}
+    archivos: list[Path] = []
+    for ext in ("*.pdf", "*.png", "*.jpg", "*.jpeg"):
+        archivos.extend(carpeta.glob(ext))
+    for f in sorted(archivos):
+        cod = codigo_mesa_desde_archivo(f)
+        clave = normalizar_codigo(cod) if normalizar else cod
+        mapa.setdefault(clave, f)
+    return mapa
+
+
 def pares_disponibles(carpeta_testigos: str | Path, carpeta_reg: str | Path) -> tuple[set[str], set[str], set[str]]:
     """
     Devuelve (pares_en_ambas, solo_testigo, solo_registraduria).
