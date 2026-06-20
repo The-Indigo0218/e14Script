@@ -82,10 +82,20 @@ def leer_filas(servicio, hoja_id: str) -> list[dict]:
     return filas
 
 
-def marcar_estado(servicio, hoja_id: str, indice_fila: int, estado: str) -> None:
-    """Escribe la columna 'Estado' de una fila específica (ej. 'Mergeado')."""
-    col = chr(ord("A") + ENCABEZADO.index("Estado"))
+def marcar_columna(servicio, hoja_id: str, indice_fila: int, columna: str, valor: str) -> None:
+    """Escribe cualquier columna de ENCABEZADO para una fila específica."""
+    col = chr(ord("A") + ENCABEZADO.index(columna))
     servicio.spreadsheets().values().update(
         spreadsheetId=hoja_id, range=f"{_HOJA}!{col}{indice_fila}",
-        valueInputOption="RAW", body={"values": [[estado]]},
+        valueInputOption="RAW", body={"values": [[valor]]},
     ).execute()
+
+
+def marcar_estado(servicio, hoja_id: str, indice_fila: int, estado: str) -> None:
+    """Escribe la columna 'Estado' de una fila específica (ej. 'Mergeado')."""
+    marcar_columna(servicio, hoja_id, indice_fila, "Estado", estado)
+
+
+def marcar_aprobado(servicio, hoja_id: str, indice_fila: int, valor: str = "Sí") -> None:
+    """Escribe la columna 'Aprobado' de una fila específica."""
+    marcar_columna(servicio, hoja_id, indice_fila, "Aprobado", valor)
