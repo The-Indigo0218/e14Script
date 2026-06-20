@@ -115,6 +115,68 @@ El comparador cruza por ese código canónico. Ver `e14/mesa.py`
 `plantillas/muestra-formulario-e14-segunda-vuelta.pdf` (ver `e14/alineacion.py`
 si el layout real no entra en una sola página).
 
+### 4.1. Traer los E-14 desde Google Drive (opcional, en vez de copiarlos a mano)
+
+Si el equipo sube las actas a una carpeta compartida de Google Drive (en vez de
+pasártelas archivo por archivo), `descargar_drive.py` las trae solo:
+
+- **No importa cómo organicen las carpetas dentro de Drive.** Busca recursivamente
+  bajo la carpeta raíz que le indiques y clasifica cada archivo **por su nombre**
+  (la misma nomenclatura `NuMunicipio_zona_puesto_mesa_<testigo|registraduria>` de
+  siempre). El equipo que sube los archivos se organiza como quiera adentro de esa
+  carpeta; lo único que importa es el **nombre del archivo**.
+- **No re-descarga lo que ya está local** con el mismo tamaño (idempotente, igual
+  que `auditar.py`).
+- Los archivos que no calzan con la nomenclatura (o cuyo municipio no está en el
+  catálogo) se listan al final **sin inventar nada** — hay que renombrarlos en Drive.
+
+**Quién necesita acceso a la carpeta de Drive:** la persona dueña del Drive la
+comparte (botón "Compartir" de Drive, como cualquier carpeta) con:
+- **Editor** para el equipo que sube/escrapea las actas.
+- **Lector** para cualquiera que solo vaya a correr `descargar_drive.py` /
+  `auditar.py` en su máquina.
+
+No hay ninguna clave ni cuenta de servicio que repartir: cada persona se autentica
+con **su propia cuenta de Google** (ver abajo).
+
+**Configuración (una sola vez, por persona):**
+
+1. Entrá a [Google Cloud Console](https://console.cloud.google.com/) con tu cuenta
+   de Google y creá un proyecto nuevo (cualquier nombre).
+2. **APIs y servicios → Biblioteca** → buscá "Google Drive API" → **Habilitar**.
+3. **APIs y servicios → Pantalla de consentimiento de OAuth**: tipo "Externo",
+   completá los campos obligatorios (nombre de la app, tu correo) y guardá. Si te
+   pide agregar "usuarios de prueba", agregá los correos de Google de todas las
+   personas del equipo que van a correr el script (mientras la app no esté
+   publicada, solo esos correos pueden autenticarse).
+4. **APIs y servicios → Credenciales → Crear credenciales → ID de cliente de
+   OAuth**. Tipo de aplicación: **"Aplicación de escritorio"**. Creala y descargá
+   el JSON.
+5. Guardá ese archivo en la raíz del proyecto como **`drive_credentials.json`**
+   (no se versiona, ya está en `.gitignore`). Cada persona del equipo repite los
+   pasos 1-5 con su propia cuenta, **o** comparten el mismo `drive_credentials.json`
+   entre todos (es solo el cliente OAuth, no una clave personal — sigue pidiendo
+   el login individual de cada uno al usarlo).
+6. Instalá las dependencias nuevas si no lo hiciste: `pip install -r requirements.txt`.
+
+**Uso:**
+
+```bash
+# El ID de la carpeta es el que aparece en la URL de Drive:
+#   https://drive.google.com/drive/folders/<ESTE_ES_EL_ID>
+python descargar_drive.py "ruta/al/Bolivar_Mesa_Mesa_2026 Presidencial.xlsx" \
+    --carpeta-drive <ID_DE_LA_CARPETA>
+```
+
+La primera vez abre el navegador para que autorices con tu cuenta de Google
+(pedí acceso de **solo lectura**, este programa nunca escribe en tu Drive);
+después queda cacheado en `.drive_token.json` (tampoco se versiona) y no vuelve a
+pedir login mientras el token siga vigente.
+
+`--dry-run` muestra qué se descargaría sin bajar nada (para revisar antes de
+gastar ancho de banda). Una vez bajados los archivos a `datos/<NN_nombre>/…`,
+seguís con `auditar.py` exactamente igual que si los hubieras copiado a mano.
+
 ### 5. Auditar un lote completo (camino recomendado)
 
 Con el **Excel de la Registraduría** como catálogo, primero ves cuántas mesas hay y
@@ -324,6 +386,18 @@ Por defecto: testigos sin `--tipo` → `desconocido`; registraduría → `delega
 | `--incluir-parciales` | Incluir mesas con una sola fuente (por defecto solo las **listas**) |
 | `--tipo-testigo`, `--solo-pagina-1` | Igual que en los lectores |
 | `--datos`, `--db`, `--salida` | Carpeta base, SQLite y Excel de salida |
+
+## Flags de descargar_drive.py
+
+`descargar_drive.py <excel> --carpeta-drive <ID> [--datos datos] [--dry-run]`
+
+| Flag | Uso |
+|------|-----|
+| `--carpeta-drive ID` | ID de la carpeta raíz en Drive (de la URL). Obligatorio. |
+| `--dry-run` | Mostrar qué se descargaría, sin bajar nada |
+| `--credenciales archivo.json` | client_secret.json de OAuth (default: `drive_credentials.json`) |
+| `--token archivo.json` | Caché local de la sesión ya autorizada (default: `.drive_token.json`) |
+| `--datos` | Carpeta base local donde colocar lo descargado (default: `datos`) |
 
 ## Re-auditoría (historial de versiones)
 

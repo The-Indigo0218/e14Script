@@ -5,6 +5,8 @@ __pycache__/
 
 # Claves / secretos
 .env
+drive_credentials.json
+.drive_token.json
 
 # Datos y salidas generadas
 *.db

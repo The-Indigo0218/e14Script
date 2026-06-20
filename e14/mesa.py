@@ -19,11 +19,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from e14.modelo import FUENTE_TESTIGO, FUENTE_REGISTRADURIA
+
 # Sufijos que se quitan del nombre de archivo para obtener el código común
-_SUFIJOS_FUENTE = (
-    "_testigo", "_testigos", "_jurado", "_jurados",
-    "_registraduria", "_reg", "_oficial", "_delegados",
-)
+_SUFIJOS_TESTIGO = ("_testigo", "_testigos", "_jurado", "_jurados")
+_SUFIJOS_REGISTRADURIA = ("_registraduria", "_reg", "_oficial", "_delegados")
+_SUFIJOS_FUENTE = _SUFIJOS_TESTIGO + _SUFIJOS_REGISTRADURIA
 
 
 def codigo_mesa_desde_archivo(ruta: str | Path) -> str:
@@ -37,6 +38,20 @@ def codigo_mesa_desde_archivo(ruta: str | Path) -> str:
         if bajo.endswith(suf):
             return stem[: len(stem) - len(suf)].rstrip("_-")
     return stem
+
+
+def fuente_desde_archivo(ruta: str | Path) -> str | None:
+    """
+    FUENTE_TESTIGO o FUENTE_REGISTRADURIA según el sufijo del nombre de archivo;
+    None si no calza con ninguno (no se puede clasificar, ej. nombre suelto sin
+    convención — útil para detectar archivos que llegan mal nombrados a Drive).
+    """
+    bajo = Path(ruta).stem.lower()
+    if bajo.endswith(_SUFIJOS_TESTIGO):
+        return FUENTE_TESTIGO
+    if bajo.endswith(_SUFIJOS_REGISTRADURIA):
+        return FUENTE_REGISTRADURIA
+    return None
 
 
 def _segmento_canonico(valor: str | int) -> str:
