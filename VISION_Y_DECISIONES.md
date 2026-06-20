@@ -88,6 +88,12 @@ devolver **JSON estructurado con confianza** por casilla.
   puede pedir una **segunda lectura con GPT**; si ambos coinciden, la confianza sube;
   si no, va a revisión. Esto es opcional y se activa sólo cuando vale la pena (poco
   costo extra, sólo en casos dudosos).
+- **Modelo Gemini por defecto: `gemini-3.5-flash`** (antes `gemini-2.5-flash`).
+  **Evidencia (2026-06-20):** contra un E-14 real de la 2ª vuelta 2022,
+  `gemini-2.5-flash` leyó 87 votos donde el acta dice 89 (confianza reportada 95%,
+  o sea el número alto NO garantiza exactitud); `gemini-3.5-flash` leyó el valor
+  correcto con 95-100% de confianza, sobre la misma imagen alineada.
+  `gemini-2.5-pro` no es opción en el tier gratis (cuota 0, requiere facturación).
 - **Aislamiento:** el proveedor vive detrás de una interfaz (`e14/ocr.py`), así que
   cambiar Gemini↔GPT no toca el resto del sistema.
 

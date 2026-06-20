@@ -54,8 +54,14 @@ Edita `.env` y pega tu clave:
 
 ```bash
 GEMINI_API_KEY=AIza...tu_clave...
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash
 ```
+
+> `gemini-3.5-flash` quedó como modelo por defecto tras probarlo contra E-14 reales de la
+> 2ª vuelta 2022: corrigió un error de dígito manuscrito que `gemini-2.5-flash` no detectaba
+> (87 en vez de 89, con 95% de confianza reportada en ambos casos — la confianza del modelo
+> no garantiza exactitud). `gemini-2.5-pro` no es una alternativa en el tier gratis: su cuota
+> ahí es 0 y requiere facturación.
 
 Verifica **antes** de procesar actas:
 

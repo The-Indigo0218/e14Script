@@ -50,7 +50,7 @@ def main():
     gpt = os.environ.get("OPENAI_API_KEY")
 
     if (backend == "gemini" or (not backend and gem)) and gem:
-        modelo = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        modelo = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
         print(f"Probando Gemini ({modelo})...")
         ok, msg = probar_gemini(gem, modelo)
     elif (backend == "gpt" or (not backend and gpt)) and gpt:

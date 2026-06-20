@@ -20,12 +20,12 @@ from dataclasses import dataclass, field, asdict
 #   2. Rodolfo Hernández Suárez — vicepresidencial: Marelen Castillo
 #      (Liga de Gobernantes Anticorrupción)
 # IMPORTANTE: el orden c1/c2 DEBE coincidir con el orden de las columnas en el
-# formulario E-14 oficial de 2022. Aquí se asume c1=Petro, c2=Hernández; verificar
-# contra el E-14 real antes de confiar en la comparación (si el formulario invierte
-# el orden, intercambiar estas dos entradas).
+# formulario E-14 oficial de 2022. Verificado contra un E-14 real (mesa
+# 001-CARTAGENA zona 01 puesto 03 mesa 002): candidato 1 = Rodolfo Hernández
+# (Liga), candidato 2 = Gustavo Petro (Pacto Histórico).
 CANDIDATOS: dict[str, tuple[str, str]] = {
-    "1": ("GUSTAVO PETRO URREGO",      "PACTO HISTÓRICO"),
-    "2": ("RODOLFO HERNÁNDEZ SUÁREZ",  "LIGA DE GOBERNANTES ANTICORRUPCIÓN"),
+    "1": ("RODOLFO HERNÁNDEZ SUÁREZ",  "LIGA DE GOBERNANTES ANTICORRUPCIÓN"),
+    "2": ("GUSTAVO PETRO URREGO",      "PACTO HISTÓRICO"),
 }
 
 # Categorías de votos NO atribuibles a un candidato
