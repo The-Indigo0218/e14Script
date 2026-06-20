@@ -67,6 +67,10 @@ class ComparacionMesa:
     copias_registraduria: str | None = None
     confianza_testigo: float | None = None
     confianza_registraduria: float | None = None
+    suma_total_testigo: int | None = None       # "TOTAL VOTOS DE LA MESA" declarado en el acta
+    total_votos_urna_testigo: int | None = None
+    suma_total_registraduria: int | None = None
+    total_votos_urna_registraduria: int | None = None
     revisar_testigo: bool = False         # necesita_revision interno (ej. suma no cuadra)
     revisar_registraduria: bool = False
     verificado_testigo: bool = False      # un humano ya confirmó esta lectura
@@ -157,6 +161,34 @@ class ComparacionMesa:
         return None if t is None or r is None else r - t
 
     @property
+    def total_declarado_testigo(self) -> int | None:
+        """"TOTAL VOTOS DE LA MESA" leído del acta del testigo (no calculado)."""
+        return (
+            self.suma_total_testigo
+            if self.suma_total_testigo is not None
+            else self.total_votos_urna_testigo
+        )
+
+    @property
+    def total_declarado_registraduria(self) -> int | None:
+        return (
+            self.suma_total_registraduria
+            if self.suma_total_registraduria is not None
+            else self.total_votos_urna_registraduria
+        )
+
+    @property
+    def cuadra_testigo(self) -> bool | None:
+        """¿La suma de candidatos+blanco+nulos+no_marcados coincide con el total declarado?"""
+        objetivo, t = self.total_declarado_testigo, self.total_testigo
+        return None if objetivo is None or t is None else t == objetivo
+
+    @property
+    def cuadra_registraduria(self) -> bool | None:
+        objetivo, t = self.total_declarado_registraduria, self.total_registraduria
+        return None if objetivo is None or t is None else t == objetivo
+
+    @property
     def porcentaje_discrepancia_total(self) -> float | None:
         """Δ total como fracción del total testigo (magnitud del error global de la mesa)."""
         t, d = self.total_testigo, self.diferencia_total
@@ -228,6 +260,10 @@ def comparar_mesa(codigo: str, fila_t: dict | None, fila_r: dict | None) -> Comp
         copias_registraduria=_valor(fila_r, "copias_en_evidencia"),
         confianza_testigo=(fila_t or {}).get("confianza"),
         confianza_registraduria=(fila_r or {}).get("confianza"),
+        suma_total_testigo=(fila_t or {}).get("suma_total"),
+        total_votos_urna_testigo=(fila_t or {}).get("total_votos_urna"),
+        suma_total_registraduria=(fila_r or {}).get("suma_total"),
+        total_votos_urna_registraduria=(fila_r or {}).get("total_votos_urna"),
         revisar_testigo=bool((fila_t or {}).get("necesita_revision")),
         revisar_registraduria=bool((fila_r or {}).get("necesita_revision")),
         verificado_testigo=bool((fila_t or {}).get("verificado_manualmente")),

@@ -86,7 +86,11 @@ def generar_excel(comparaciones, salida):
         "Excel) y la próxima vez que regeneres el archivo aparecerá 'Verificado'. "
         "'Revisar' es más amplio: marca cualquier problema interno (confianza baja, suma no "
         "cuadra, alineación pobre) aunque las fuentes coincidan entre sí. % Discrepancia total "
-        "mide el error global de la mesa como fracción de sus votos.",
+        "mide el error global de la mesa como fracción de sus votos. '¿Cuadra? suma=total' "
+        "compara la suma de candidatos+blanco+nulos+no marcados contra el \"TOTAL VOTOS DE LA "
+        "MESA\" impreso en el acta; en rojo si no coinciden. La hoja Comparación tiene filtro de "
+        "Excel (flechas en el encabezado): usa la de 'Confianza OCR' para ordenar de menor a "
+        "mayor, la de 'Estado' para dejar solo DISCREPANCIA, y la de '¿Cuadra?' para dejar solo 'No'.",
     )
     nota.font = Font(italic=True, name="Arial", size=9, color="595959")
     nota.alignment = Alignment(wrap_text=True, vertical="top")
@@ -114,6 +118,10 @@ def generar_excel(comparaciones, salida):
         "Total no válidos\n(blanco+nulos+no marc.)\n(Testigo)",
         "Total no válidos\n(Registr.)", "Δ",
         "Total acta\n(Testigo)", "Total acta\n(Registr.)", "Δ",
+        "Total declarado\nen el acta\n(Testigo)",
+        "¿Cuadra?\nsuma=total\n(Testigo)",
+        "Total declarado\nen el acta\n(Registr.)",
+        "¿Cuadra?\nsuma=total\n(Registr.)",
         "% Discrepancia\ntotal",
     ]
     for j, h in enumerate(encabezados, 1):
@@ -237,6 +245,23 @@ def generar_excel(comparaciones, salida):
                 c.font = Font(bold=True, name="Arial", size=9, color="9C0006")
         j += 3
 
+        # ── ¿Cuadra? la suma de votos vs el "TOTAL VOTOS DE LA MESA" declarado en el acta ──
+        for off, (decl, cuadra) in enumerate((
+            (comp.total_declarado_testigo, comp.cuadra_testigo),
+            (comp.total_declarado_registraduria, comp.cuadra_registraduria),
+        )):
+            c_decl = _celda_num(fila, j, decl)
+            texto = "—" if cuadra is None else ("Sí" if cuadra else "No")
+            c_cuadra = ws2.cell(fila, j + 1, texto)
+            c_cuadra.alignment = Alignment(horizontal="center")
+            c_cuadra.font = Font(name="Arial", size=9, bold=(cuadra is False))
+            c_cuadra.border = _borde()
+            if cuadra is False:
+                c_decl.fill = PatternFill("solid", start_color=ROJO)
+                c_cuadra.fill = PatternFill("solid", start_color=ROJO)
+                c_cuadra.font = Font(bold=True, name="Arial", size=9, color="9C0006")
+            j += 2
+
         c_pct = _celda_num(fila, j, comp.porcentaje_discrepancia_total, fmt="0.0%")
         if comp.porcentaje_discrepancia_total and abs(comp.porcentaje_discrepancia_total) >= 0.01:
             c_pct.fill = PatternFill("solid", start_color=ROJO)
@@ -244,6 +269,7 @@ def generar_excel(comparaciones, salida):
 
         fila += 1
     ws2.freeze_panes = "G2"
+    ws2.auto_filter.ref = ws2.dimensions
     ws2.column_dimensions["A"].width = 18
     for col in "CDEF":
         ws2.column_dimensions[col].width = 16

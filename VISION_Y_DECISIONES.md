@@ -191,20 +191,64 @@ PDF E-14 (oficial y testigo)
 
 ---
 
-## 6. Costos (toda Cartagena, ~2.641 mesas)
+## 6. Costos (recalculado 2026-06-20, todo Bolívar, modelo `gemini-3.5-flash`)
 
-Leyendo las 2 páginas con votos de **ambas** fuentes (~10.600 páginas):
+**Universo real** (catálogo `cobertura.py`, sin filtro de municipio): el departamento
+de Bolívar tiene **46 municipios y 5.354 mesas** (Cartagena son 2.517 de esas). La
+tabla anterior de esta sección estaba calculada solo para Cartagena, con el modelo
+`gemini-2.5-flash` y asumiendo 2 páginas con votos por acta. Ambos supuestos quedaron
+obsoletos: el modelo subió a `gemini-3.5-flash` (commit `dba2317`, más preciso) y la
+segunda vuelta usa **1 sola página de votos** por acta (`--solo-pagina-1`), no 2.
 
-| Proveedor | Precio/página | Costo Cartagena |
+**Precio oficial de `gemini-3.5-flash`** ([ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing),
+consultado 2026-06-20, tier de pago — el tier gratis de Google AI Studio sigue
+existiendo pero está limitado a ~1.500 requests/día):
+
+| Concepto | Precio |
+|---|---|
+| Input | $1.50 / 1M tokens |
+| Output | $9.00 / 1M tokens |
+| Input cacheado | $0.15 / 1M tokens |
+
+**Tokens por llamada OCR** (1 imagen alineada + el prompt de `e14/ocr.py` + JSON de
+respuesta con 6 campos — c1, c2, blanco, nulos, no_marcados, suma_total):
+
+| Componente | Tokens | Supuesto |
 |---|---|---|
-| Gemini / GPT visión | ~$0.003–0.01 | **~$30–110** |
-| Google Document AI / Textract (texto) | $0.0015 | ~$16 |
-| Azure Read | $0.01 | ~$106 |
-| Local (PaddleOCR) | ~$0 | $0 |
+| Imagen (input) | 560–1.120 | resolución `medium`–`high` (Gemini 3 cobra fijo por nivel: 280/560/1.120/imagen) |
+| Prompt de texto (input) | ~300 | instrucciones + 6 etiquetas de campo |
+| Respuesta JSON (output) | ~200–250 | 6 campos `{valor, confianza}` |
 
-**Presupuesto disponible: ~$150 USD → alcanza para Cartagena completa con margen**
-para reprocesos y verificación cruzada. (El "$75/hora de AWS" era una instancia GPU,
-que NO se necesita en este enfoque.)
+→ **costo por llamada OCR ≈ $0.0035–$0.0045**
+
+**Volumen total para auditar TODO Bolívar** (testigo + oficial, las 5.354 mesas):
+
+- Base: 5.354 mesas × 2 fuentes × 1 página = **10.708 llamadas**
+- + reintento "zoom" cuando quedan casillas sin leer (visto en pruebas reales, no
+  siempre ocurre): estimo +15–30% → **~12.300–13.900 llamadas**
+
+| Escenario | Llamadas | Costo total |
+|---|---|---|
+| Optimista (medium, sin reintentos) | 10.708 | **~$37** |
+| Conservador (high + 30% reintentos) | 13.900 | **~$63** |
+
+**Con un presupuesto aprobado de $300 USD, auditar las 5.354 mesas de todo Bolívar
+cuesta entre ~$37 y ~$63 en OCR** (incluso duplicando esa cifra por imprevistos,
+sigue por debajo de $130) → queda un margen de **~$170–$260** sin tocar el
+presupuesto, bastante más que los $100 de margen que se estaban evaluando.
+
+**El cuello de botella real no es este costo de API — es la cobertura de datos.**
+Hoy solo hay evidencia real (testigo + oficial) de **1 mesa de 5.354** (0.02%).
+Conseguir las fotos/PDF de testigos de las ~5.353 mesas restantes en 46 municipios
+es trabajo logístico humano, no algo que el presupuesto de OCR resuelva.
+
+> Esta es una estimación de tokens, no una medición de facturación real (Google no
+> publica el costo exacto por imagen para Gemini 3.x). Antes de comprometer el
+> presupuesto, vale la pena correr un piloto de 50–100 mesas con facturación
+> habilitada (no tier gratis) y mirar el costo real en el dashboard de Google AI
+> Studio / Cloud Billing, para confirmar este rango con datos reales.
+
+(El "$75/hora de AWS" era una instancia GPU, que NO se necesita en este enfoque.)
 
 ---
 
