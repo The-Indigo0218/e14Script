@@ -268,30 +268,102 @@ class BackendGPT:
         return _parsear_respuesta(texto, cols)
 
 
+# ─── Verificador: segunda lectura con OTRO modelo, solo para casillas dudosas ──
+class BackendVerificado:
+    """
+    Envuelve un backend PRINCIPAL con un VERIFICADOR (otro modelo) que solo se
+    consulta cuando el principal devolvió alguna casilla con confianza
+    < UMBRAL_REVISION. Dos lecturas independientes coincidiendo es una señal
+    fuerte de que el valor es correcto; si discrepan, queda marcado para
+    revisión humana con ambos valores en las notas — nunca se promedia ni se
+    inventa un valor.
+
+    Costo acotado a propósito: la llamada extra al verificador solo se dispara
+    si hay al menos una casilla dudosa (no en cada acta), así que el costo
+    adicional cae justo donde más sirve.
+    """
+
+    def __init__(self, principal, verificador):
+        self.principal = principal
+        self.verificador = verificador
+        self.nombre = f"{principal.nombre}+verificador_{verificador.nombre}"
+
+    def reconocer_votos(self, imagen_alineada, layout_id: str) -> LecturaOCR:
+        lectura = self.principal.reconocer_votos(imagen_alineada, layout_id)
+        cols = columnas_de_layout(layout_id)
+        dudosas = [c for c in cols if lectura.confianzas.get(c, 0.0) < UMBRAL_REVISION]
+        if not dudosas:
+            return lectura
+
+        lectura2 = self.verificador.reconocer_votos(imagen_alineada, layout_id)
+        notas_verif: list[str] = []
+        for c in dudosas:
+            v1, v2 = lectura.valores.get(c), lectura2.valores.get(c)
+            et = _etiqueta(c)
+            if v1 is None and v2 is not None:
+                lectura.valores[c] = v2
+                lectura.confianzas[c] = lectura2.confianzas.get(c, 0.0)
+                notas_verif.append(f"{et}: recuperado por verificador ({v2})")
+            elif v1 is not None and v2 is not None and v1 == v2:
+                lectura.confianzas[c] = max(
+                    lectura.confianzas[c], lectura2.confianzas.get(c, 0.0), UMBRAL_REVISION
+                )
+                notas_verif.append(f"{et}: verificador confirma ({v1})")
+            elif v1 is not None and v2 is not None and v1 != v2:
+                notas_verif.append(
+                    f"{et}: DISCREPANCIA principal={v1} verificador={v2} (queda para revisión)"
+                )
+            # v1 None y v2 None: ninguno pudo leerla, sigue dudosa tal cual.
+
+        presentes = [lectura.confianzas[c] for c in cols if lectura.valores.get(c) is not None]
+        lectura.confianza_global = min(presentes) if presentes else 0.0
+        lectura.necesita_revision = (not presentes) or any(
+            lectura.confianzas[c] < UMBRAL_REVISION for c in cols if lectura.valores.get(c) is not None
+        )
+        if notas_verif:
+            prefijo = f"Verificador ({self.verificador.nombre}): " + " | ".join(notas_verif)
+            lectura.notas = f"{lectura.notas} | {prefijo}" if lectura.notas else prefijo
+        return lectura
+
+
 # ─── Fábrica: elige el backend según el entorno ───────────────────────────────
-def crear_backend(preferido: str | None = None):
+def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool | None = None):
     """
     Devuelve el backend a usar.
       • OCR_BACKEND=gemini|gpt|manual fuerza uno.
       • Si no, usa Gemini si hay GEMINI_API_KEY, luego GPT si hay OPENAI_API_KEY.
       • Si no hay claves, BackendManual.
+      • Doble verificación con GPT (cuando el principal es Gemini): SOLO si se
+        pide explícitamente, nunca por defecto — `verificar_baja_confianza=True`
+        (ej. desde --verificar-baja-confianza en auditar.py) o, si no se pasa
+        nada (None), la variable de entorno OCR_VERIFICAR_BAJA_CONFIANZA=1.
+        Envuelve con BackendVerificado: GPT solo se consulta en casillas con
+        confianza < 80%, no en cada acta. Requiere también OPENAI_API_KEY.
     """
     cargar_env()
     elegido = (preferido or os.environ.get("OCR_BACKEND") or "").lower()
 
     gem = os.environ.get("GEMINI_API_KEY")
     gpt = os.environ.get("OPENAI_API_KEY")
+    if verificar_baja_confianza is None:
+        verificar = os.environ.get("OCR_VERIFICAR_BAJA_CONFIANZA", "").lower() in ("1", "true", "yes")
+    else:
+        verificar = verificar_baja_confianza
 
     if elegido == "manual":
         return BackendManual()
     if elegido == "gemini" or (not elegido and gem):
         if gem:
-            return BackendGemini(gem, os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"))
+            principal = BackendGemini(gem, os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"))
+            if verificar and gpt:
+                verificador = BackendGPT(gpt, os.environ.get("OPENAI_MODEL", "gpt-4o"))
+                return BackendVerificado(principal, verificador)
+            return principal
     if elegido == "gpt" or (not elegido and gpt):
         if gpt:
             return BackendGPT(gpt, os.environ.get("OPENAI_MODEL", "gpt-4o"))
     return BackendManual()
 
 
-def backend_por_defecto():
-    return crear_backend()
+def backend_por_defecto(verificar_baja_confianza: bool | None = None):
+    return crear_backend(verificar_baja_confianza=verificar_baja_confianza)

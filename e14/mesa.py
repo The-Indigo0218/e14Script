@@ -154,6 +154,37 @@ def mapa_codigo_archivo(carpeta: str | Path, normalizar: bool = True) -> dict[st
     return mapa
 
 
+def filtrar_por_zona_puesto(codigos, zona: str | int | None = None,
+                           puesto: str | int | None = None) -> list[str]:
+    """
+    Filtra códigos de mesa (ya del municipio del lote) por zona y, opcionalmente,
+    puesto dentro de esa zona. Sin filtros, devuelve todo ordenado.
+
+    NUNCA se admite `puesto` sin `zona`: el mismo número de puesto se repite en
+    decenas de zonas distintas dentro de un mismo municipio (ej. en Cartagena el
+    "puesto 1" existe en 22 zonas), así que saltarse ese nivel de la jerarquía
+    municipio→zona→puesto→mesa sería ambiguo, no un alias válido.
+    """
+    if puesto is not None and zona is None:
+        raise ValueError(
+            "--puesto requiere --zona (no se puede filtrar por puesto solo: "
+            "el número de puesto se repite en distintas zonas del municipio)."
+        )
+    if zona is None:
+        return sorted(codigos)
+    zona_norm = _segmento_canonico(zona)
+    puesto_norm = _segmento_canonico(puesto) if puesto is not None else None
+    seleccionados = []
+    for c in codigos:
+        meta = municipio_zona_puesto_mesa_desde_codigo(c)
+        if not meta or _segmento_canonico(meta["zona"]) != zona_norm:
+            continue
+        if puesto_norm is not None and _segmento_canonico(meta["puesto"]) != puesto_norm:
+            continue
+        seleccionados.append(c)
+    return sorted(seleccionados)
+
+
 def pares_disponibles(carpeta_testigos: str | Path, carpeta_reg: str | Path) -> tuple[set[str], set[str], set[str]]:
     """
     Devuelve (pares_en_ambas, solo_testigo, solo_registraduria).

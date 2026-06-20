@@ -150,6 +150,11 @@ class Almacen:
         cur = self.con.execute("SELECT * FROM actas WHERE fuente = ?", (fuente,))
         return {row["codigo_mesa"]: dict(row) for row in cur.fetchall()}
 
+    def todas_las_filas(self) -> list[dict]:
+        """Todas las filas de `actas`, sin filtrar por fuente (para mergear entre bases)."""
+        cur = self.con.execute("SELECT * FROM actas")
+        return [dict(row) for row in cur.fetchall()]
+
     def mesas(self) -> list[str]:
         cur = self.con.execute("SELECT DISTINCT codigo_mesa FROM actas ORDER BY codigo_mesa")
         return [r["codigo_mesa"] for r in cur.fetchall()]

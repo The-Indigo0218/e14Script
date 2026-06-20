@@ -17,6 +17,12 @@ refresca solo — no vuelve a pedir login.
 
 Requiere las librerías de Google (ver requirements.txt):
     google-api-python-client, google-auth-httplib2, google-auth-oauthlib
+
+NOTA sobre el scope: incluye lectura/escritura de Drive (para que
+`subir_resultados.py` pueda subir actas.db) y de Sheets (panel maestro en
+`e14/sheets.py`), no solo lectura. Si ya autorizaste antes con un token de
+solo-lectura, borrá `.drive_token.json` para volver a autorizar con estos
+permisos.
 """
 
 from __future__ import annotations
@@ -24,8 +30,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-# Solo lectura: este programa nunca necesita escribir en el Drive de nadie.
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+]
 _MIME_CARPETA = "application/vnd.google-apps.folder"
 
 
@@ -122,3 +130,29 @@ def descargar_archivo(servicio, archivo_id: str, destino: Path) -> None:
         listo = False
         while not listo:
             _, listo = descargador.next_chunk()
+
+
+def subir_archivo(servicio, ruta_local: str | Path, carpeta_id: str,
+                  nombre: str | None = None) -> str:
+    """
+    Sube un archivo local a una carpeta de Drive. Si ya existe un archivo con
+    el mismo nombre en esa carpeta, lo REEMPLAZA (mismo id de Drive, nueva
+    versión) en vez de duplicarlo. Devuelve el id del archivo en Drive.
+    """
+    from googleapiclient.http import MediaFileUpload
+
+    ruta_local = Path(ruta_local)
+    nombre = nombre or ruta_local.name
+    resp = servicio.files().list(
+        q=f"name='{nombre}' and '{carpeta_id}' in parents and trashed = false",
+        fields="files(id)",
+    ).execute()
+    existentes = resp.get("files", [])
+    media = MediaFileUpload(str(ruta_local), resumable=True)
+    if existentes:
+        archivo = servicio.files().update(fileId=existentes[0]["id"], media_body=media).execute()
+        return archivo["id"]
+    archivo = servicio.files().create(
+        body={"name": nombre, "parents": [carpeta_id]}, media_body=media, fields="id",
+    ).execute()
+    return archivo["id"]
