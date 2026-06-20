@@ -21,6 +21,8 @@ auditoria-e14/
 ├── ▶️ Scripts que TÚ ejecutas
 │   ├── auditar.py                → ORQUESTADOR: audita un lote (municipio) de punta a punta
 │   ├── descargar_drive.py        → Trae los E-14 desde una carpeta de Google Drive
+│   ├── subir_resultados.py       → Sube actas.db a Drive + fila en el panel de Sheets
+│   ├── consolidar_resultados.py  → Mergea a la base maestra SOLO lo aprobado en el panel
 │   ├── cobertura.py              → Tablero de cobertura / detalle de un lote (sin OCR)
 │   ├── leer_testigos.py          → E-14 de testigos (CSV o PDF/OCR)
 │   ├── leer_registraduria.py     → E-14 oficial (PDF + OCR)
@@ -34,7 +36,8 @@ auditoria-e14/
 │   ├── modelo.py                 → ActaE14, 2 candidatos (segunda vuelta), tipo_acta, copias_en_evidencia
 │   ├── almacen.py                → SQLite (actas.db) + historial de re-auditoría
 │   ├── mesa.py                   → Nomenclatura NuMunicipio_zona_puesto_mesa, código canónico, emparejamiento
-│   ├── drive.py                  → Cliente Google Drive (OAuth, listar/descargar recursivo)
+│   ├── drive.py                  → Cliente Google Drive (OAuth, listar/descargar/subir)
+│   ├── sheets.py                 → Cliente Google Sheets (panel maestro de resultados)
 │   ├── catalogo.py               → Excel "Mesa a Mesa" → universo de mesas por municipio
 │   ├── cobertura.py              → Cruza catálogo vs archivos presentes (estados del lote)
 │   ├── alineacion.py             → Capa 1: SIFT + homografía vs plantilla
@@ -53,6 +56,9 @@ auditoria-e14/
 │   ├── test_cobertura.py         → Estados del lote
 │   ├── test_auditar.py           → Orquestador (lector falso, sin OCR)
 │   ├── test_drive.py             → Clasificación por nombre + ubicación en el lote (sin red)
+│   ├── test_ocr_verificacion.py  → Doble lectura GPT en casillas de confianza baja (sin red)
+│   ├── test_subir_resultados.py  → Resumen local para el panel (sin red)
+│   ├── test_consolidar_resultados.py → Merge entre bases SQLite locales (sin red)
 │   └── test_almacen.py           → Persistencia + versionado de re-auditoría
 │
 ├── 📁 Entradas
@@ -80,7 +86,10 @@ Un **lote = un municipio**. El Excel "Mesa a Mesa" de la Registraduría es el ca
 | Archivo | Qué hace |
 |---------|----------|
 | **`cobertura.py`** | Lee el catálogo (Excel) y dice, por municipio, cuántas mesas hay y cuántas están **listas** (testigo + oficial). Tablero del departamento o detalle de un lote; `--crear-carpetas` arma `datos/<NN_nombre>/`. No gasta OCR. |
-| **`auditar.py`** | **Orquestador.** Para un `--municipio`: calcula cobertura, selecciona las mesas listas, las lee con el pipeline (Capa 1 + OCR), guarda con código canónico y genera el Excel de comparación. `--plan`, `--limite`, `--reauditar`, `--incluir-parciales`. |
+| **`auditar.py`** | **Orquestador.** Para un `--municipio`: calcula cobertura, selecciona las mesas listas, las lee con el pipeline (Capa 1 + OCR), guarda con código canónico y genera el Excel de comparación. `--plan`, `--limite`, `--reauditar`, `--incluir-parciales`, `--paralelo`, `--zona`/`--puesto` (nunca puesto sin zona). |
+| **`descargar_drive.py`** | Trae E-14 desde una carpeta de Google Drive (recursivo, clasifica por nombre de archivo, no le importa la estructura de carpetas). Idempotente; `--dry-run`. |
+| **`subir_resultados.py`** | Sube tu `actas.db` local a Drive y agrega una fila de resumen al panel maestro de Sheets (estado "Pendiente"). |
+| **`consolidar_resultados.py`** | Mergea a una base maestra SOLO las filas que alguien marcó "Aprobado" en el panel; las marca "Mergeado" para no repetir. Conserva el versionado de `Almacen`. |
 
 ```bash
 python cobertura.py "ruta/al/…Mesa_Mesa…xlsx"                      # tablero depto
@@ -128,12 +137,14 @@ legacy (sin `NuMunicipio` ni carpeta de lote); para datos reales usa el flujo po
 |---------|------|----------|
 | **`modelo.py`** | Contrato | `ActaE14`: mesa, votos c1–c13, `tipo_acta`, `copias_en_evidencia`, confianza. |
 | **`almacen.py`** | DB | SQLite `actas.db`; clave `(codigo_mesa, fuente)`. Tabla `actas_historial`: versiones anteriores al re-auditar (`historial()`, `num_versiones()`). |
-| **`mesa.py`** | Nomenclatura | `1_21_01_13_testigo.pdf` → código canónico `1_21_1_13` (`codigo_canonico`, `normalizar_codigo`); `pares_disponibles()` y `mapa_codigo_archivo()` entre carpetas. |
+| **`mesa.py`** | Nomenclatura | `1_21_01_13_testigo.pdf` → código canónico `1_21_1_13` (`codigo_canonico`, `normalizar_codigo`); `pares_disponibles()` y `mapa_codigo_archivo()` entre carpetas; `filtrar_por_zona_puesto()` (nunca puesto sin zona). |
+| **`drive.py`** | Drive | OAuth de escritorio (scope Drive + Sheets, una sola cuenta por persona). `listar_archivos_recursivo()`, `descargar_archivo()`, `subir_archivo()`. |
+| **`sheets.py`** | Sheets | Panel maestro de resultados: `asegurar_encabezado()`, `agregar_fila()`, `leer_filas()`, `marcar_estado()`. |
 | **`catalogo.py`** | Catálogo | Lee el Excel "Mesa a Mesa" → `Catalogo`: universo de mesas por municipio, `MUN→nombre` (códigos Registraduría, repara mojibake), `crear_estructura_lote()`. |
 | **`cobertura.py`** | Cobertura | `cobertura_lote()` cruza catálogo vs archivos: listas / solo_testigo / solo_registraduria / faltan_ambas / fuera_de_catalogo. |
 | **`alineacion.py`** | **1** | PDF → gris; SIFT + homografía vs `plantillas/muestra-formulario-e14-segunda-vuelta.pdf`. Layouts: `acta_completa` (2 candidatos + totales, 1 página), `firmas`. Parámetro `solo_layouts` para forzar uno. |
 | **`preprocess.py`** | Pre-OCR | `recortar_margenes_negros()` (PDF alto → mucho negro tras alinear), `mejorar_para_ocr()` (CLAHE + zoom). |
-| **`ocr.py`** | **2** | Gemini (recomendado), GPT, manual. Prompt para puntos como ceros (`..3`→3). Reintentos 429. Campo `detalle_api` en notas. |
+| **`ocr.py`** | **2** | Gemini (recomendado), GPT, manual. Prompt para puntos como ceros (`..3`→3). Reintentos 429. Campo `detalle_api` en notas. `BackendVerificado`: doble lectura con GPT solo en casillas con confianza < 80% (opt-in, `OCR_VERIFICAR_BAJA_CONFIANZA=1`). |
 | **`evidencia.py`** | Trazabilidad | Qué copias aparecen en la foto. PDF oficial: lee título pág. 1; fotos testigo: Gemini o heurística de layout. |
 | **`lectura.py`** | Orquestador | `leer_acta_pdf()`: evidencia → capa 1 → preprocess → OCR (+ re-OCR zoom si faltan casillas). Con `layouts` activo, solo procesa **página 1** del PDF. |
 | **`comparador.py`** | **3** | Discrepancias columna a columna; alertas por copias múltiples en evidencia. |

@@ -11,6 +11,10 @@ Uso:
     # Detalle de un lote (municipio), creando sus carpetas si faltan:
     python cobertura.py "<ruta>/...xlsx" --municipio 1 --crear-carpetas
 
+    # Acotar a una zona (o zona+puesto) antes de auditarla — nunca puesto sin zona:
+    python cobertura.py "<ruta>/...xlsx" --municipio 1 --zona 1
+    python cobertura.py "<ruta>/...xlsx" --municipio 1 --zona 1 --puesto 1
+
     # Cambiar la carpeta base de datos (por defecto: datos/):
     python cobertura.py "<ruta>/...xlsx" --municipio 1 --datos datos
 """
@@ -29,9 +33,18 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("excel", help="Ruta al Excel 'Mesa a Mesa' de la Registraduría")
     p.add_argument("--municipio", "-m", help="Código MUN del lote (ej. 1). Sin esto, muestra el tablero completo.")
+    p.add_argument("--zona", help="Acotar a esta zona dentro del municipio (requiere --municipio)")
+    p.add_argument("--puesto", help="Acotar a este puesto dentro de la zona (requiere --zona)")
     p.add_argument("--datos", "-d", default="datos", help="Carpeta base de datos (por defecto: datos)")
     p.add_argument("--crear-carpetas", action="store_true", help="Crear las carpetas del lote si no existen")
     args = p.parse_args(argv)
+
+    if args.puesto is not None and args.zona is None:
+        print("Error: --puesto requiere --zona (no se puede filtrar por puesto solo).", file=sys.stderr)
+        return 1
+    if args.zona is not None and not args.municipio:
+        print("Error: --zona requiere --municipio.", file=sys.stderr)
+        return 1
 
     try:
         catalogo = cargar_catalogo(args.excel)
@@ -46,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.crear_carpetas:
             lote = crear_estructura_lote(args.datos, catalogo, args.municipio)
             print(f"Carpetas del lote listas en: {lote}\n")
-        print(cobertura_lote(catalogo, args.municipio, args.datos).texto())
+        print(cobertura_lote(catalogo, args.municipio, args.datos, zona=args.zona, puesto=args.puesto).texto())
         return 0
 
     # Tablero: una línea por municipio.

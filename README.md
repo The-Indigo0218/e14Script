@@ -74,6 +74,18 @@ python probar_api.py
 Si sale `HTTP 429`, espera unos minutos (cuota del free tier) y reintenta. No corras los
 lectores en bucle mientras la cuota esté agotada.
 
+**Doble verificación con GPT (opcional, cuando Gemini reporta confianza baja):** **apagado
+por defecto, solo se activa si lo pedís explícitamente** — nunca se gasta esta llamada
+extra sin que alguien lo solicite a propósito. Dos formas de pedirlo (con `OPENAI_API_KEY`
+puesta en `.env`):
+- **Por corrida** (recomendado): `python auditar.py ... --verificar-baja-confianza`
+- **Siempre** (si preferís dejarlo prendido de forma permanente): `OCR_VERIFICAR_BAJA_CONFIANZA=1` en `.env`
+
+Con cualquiera de las dos, las casillas con confianza < 80% se le vuelven a preguntar a
+GPT como segunda opinión: si coinciden, la confianza sube; si discrepan, queda marcado
+para revisión con ambos valores en las notas (nunca se promedia ni se inventa un valor).
+Solo gasta la llamada extra en las casillas dudosas, no en cada acta.
+
 ### 4. Plantilla y par de prueba
 
 El repo trae un par de **primera vuelta** (Cartagena, zona 21, puesto 01, mesa 13)
@@ -144,6 +156,8 @@ con **su propia cuenta de Google** (ver abajo).
 1. Entrá a [Google Cloud Console](https://console.cloud.google.com/) con tu cuenta
    de Google y creá un proyecto nuevo (cualquier nombre).
 2. **APIs y servicios → Biblioteca** → buscá "Google Drive API" → **Habilitar**.
+   Repetí lo mismo para "Google Sheets API" (se usa en §4.2, para el panel maestro
+   de resultados).
 3. **APIs y servicios → Pantalla de consentimiento de OAuth**: tipo "Externo",
    completá los campos obligatorios (nombre de la app, tu correo) y guardá. Si te
    pide agregar "usuarios de prueba", agregá los correos de Google de todas las
@@ -168,14 +182,59 @@ python descargar_drive.py "ruta/al/Bolivar_Mesa_Mesa_2026 Presidencial.xlsx" \
     --carpeta-drive <ID_DE_LA_CARPETA>
 ```
 
-La primera vez abre el navegador para que autorices con tu cuenta de Google
-(pedí acceso de **solo lectura**, este programa nunca escribe en tu Drive);
+La primera vez abre el navegador para que autorices con tu cuenta de Google;
 después queda cacheado en `.drive_token.json` (tampoco se versiona) y no vuelve a
-pedir login mientras el token siga vigente.
+pedir login mientras el token siga vigente. El permiso pedido incluye lectura y
+escritura de Drive y de Sheets (lo necesita §4.2 para subir resultados), no solo
+lectura — si ya habías autorizado con una versión anterior de este programa que
+solo pedía lectura, borrá `.drive_token.json` y volvé a correr el comando para
+re-autorizar con los permisos nuevos.
 
 `--dry-run` muestra qué se descargaría sin bajar nada (para revisar antes de
 gastar ancho de banda). Una vez bajados los archivos a `datos/<NN_nombre>/…`,
 seguís con `auditar.py` exactamente igual que si los hubieras copiado a mano.
+
+### 4.2. Centralizar resultados del equipo (Drive + panel en Sheets)
+
+Cada persona audita su zona/puesto en **su `actas.db` local** (§5, con `--zona`/
+`--puesto` si querés acotar). Para juntar todo en una base maestra sin perder
+trazabilidad ni mergear nada sin que alguien lo revise:
+
+1. **Creá la hoja de cálculo maestra:** un Google Sheet en blanco, compartido con
+   el mismo grupo de gente. El ID es el que aparece en su URL:
+   `https://docs.google.com/spreadsheets/d/<ESTE_ES_EL_ID>/edit`. No hace falta
+   crear el encabezado a mano — `subir_resultados.py` lo crea solo la primera vez.
+2. **Creá (o reutilizá) una carpeta de Drive para los resultados** — el ID es el
+   mismo tipo que usaste en §4.1 — y compartila igual: Editor para quien sube
+   resultados, Lector para quien solo consolida.
+3. **Cada persona, al terminar su zona/puesto**, sube su `actas.db`:
+
+   ```bash
+   python subir_resultados.py actas.db --persona "juan" \
+       --carpeta-drive <ID_CARPETA_RESULTADOS> --hoja <ID_HOJA_MAESTRA> \
+       --municipio 1 --zona 1
+   ```
+
+   Esto sube el archivo a Drive y agrega una fila al panel ("Panel" dentro de la
+   hoja) con un resumen (mesas leídas, coinciden, discrepancia, casillas con
+   confianza baja) y estado **"Pendiente"**.
+4. **El jefe y vos revisan el panel en tiempo real** (es una hoja de Sheets común,
+   se ve actualizarse sola) y escriben **"Sí"** en la columna "Aprobado" de las
+   filas que correspondan — eso pasa por fuera del código, es edición normal de
+   la hoja.
+5. **Consolidás** lo aprobado a la base maestra:
+
+   ```bash
+   python consolidar_resultados.py actas_maestra.db \
+       --carpeta-drive <ID_CARPETA_RESULTADOS> --hoja <ID_HOJA_MAESTRA>
+   ```
+
+   Solo mergea filas con "Aprobado" = sí; cada fila mergeada queda marcada
+   "Mergeado" para no repetirse en la próxima corrida. Si una mesa ya existía en
+   la maestra, el versionado de siempre (`Almacen`) archiva la versión anterior
+   en vez de perderla. `--dry-run` muestra qué se mergearía sin tocar nada.
+6. Corré `comparar.py` sobre `actas_maestra.db` para el Excel consolidado de todo
+   lo aprobado hasta el momento.
 
 ### 5. Auditar un lote completo (camino recomendado)
 
@@ -379,9 +438,12 @@ Por defecto: testigos sin `--tipo` → `desconocido`; registraduría → `delega
 | Flag | Uso |
 |------|-----|
 | `--municipio N` / `-m N` | Lote a auditar (el `NuMunicipio` del catálogo). Obligatorio. |
+| `--zona N` | Acotar a esta zona dentro del municipio (ej. `--municipio 1 --zona 1`) |
+| `--puesto N` | Acotar a este puesto dentro de la zona (**requiere `--zona`**; nunca puesto solo — el número de puesto se repite en muchas zonas) |
 | `--plan` | Listar qué mesas se procesarían y salir (**no gasta OCR**) |
 | `--limite N` | Procesar solo las primeras N mesas (control de volumen/costo) |
 | `--paralelo N` | Leer N actas a la vez en hilos (default 1 = secuencial). Acelera el lote; el guardado en SQLite sigue siendo secuencial. Si ves `429`, bajalo — el límite real de RPM está en https://aistudio.google.com/rate-limit |
+| `--verificar-baja-confianza` | Doble lectura con GPT, solo en casillas con confianza < 80% (requiere `OPENAI_API_KEY`). **Apagado salvo que se pida con este flag.** |
 | `--reauditar` | Reprocesar mesas ya leídas (archiva la versión anterior) |
 | `--incluir-parciales` | Incluir mesas con una sola fuente (por defecto solo las **listas**) |
 | `--tipo-testigo`, `--solo-pagina-1` | Igual que en los lectores |
@@ -398,6 +460,21 @@ Por defecto: testigos sin `--tipo` → `desconocido`; registraduría → `delega
 | `--credenciales archivo.json` | client_secret.json de OAuth (default: `drive_credentials.json`) |
 | `--token archivo.json` | Caché local de la sesión ya autorizada (default: `.drive_token.json`) |
 | `--datos` | Carpeta base local donde colocar lo descargado (default: `datos`) |
+
+## Flags de subir_resultados.py / consolidar_resultados.py
+
+`subir_resultados.py <actas.db> --persona NOMBRE --carpeta-drive <ID> --hoja <ID> [--municipio N] [--zona N] [--puesto N]`
+
+`consolidar_resultados.py <actas_maestra.db> --carpeta-drive <ID> --hoja <ID> [--dry-run]`
+
+| Flag | Uso |
+|------|-----|
+| `--persona NOMBRE` | Quién sube (identifica la fila en el panel). Obligatorio en `subir_resultados.py`. |
+| `--carpeta-drive ID` | Carpeta de Drive donde viven los `actas.db` subidos por el equipo. Obligatorio. |
+| `--hoja ID` | ID de la hoja de cálculo maestra (de su URL). Obligatorio. |
+| `--municipio`, `--zona`, `--puesto` | Solo informativos, para identificar qué se subió en el panel |
+| `--dry-run` (solo consolidar) | Mostrar qué se mergearía sin tocar la base maestra ni el panel |
+| `--credenciales`, `--token` | Igual que en `descargar_drive.py` |
 
 ## Re-auditoría (historial de versiones)
 

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from e14.catalogo import Catalogo, nombre_carpeta_lote
-from e14.mesa import listar_codigos_en_carpeta
+from e14.mesa import filtrar_por_zona_puesto, listar_codigos_en_carpeta
 
 
 @dataclass
@@ -92,21 +92,32 @@ class Cobertura:
 
 
 def cobertura_lote(catalogo: Catalogo, municipio: str | int,
-                   base_datos: str | Path = "datos") -> Cobertura:
+                   base_datos: str | Path = "datos", *,
+                   zona: str | int | None = None,
+                   puesto: str | int | None = None) -> Cobertura:
     """
     Calcula la cobertura de un municipio leyendo su carpeta de lote:
         <base_datos>/<NN_nombre>/testigos/
         <base_datos>/<NN_nombre>/registraduria/
     Si la carpeta no existe aún, testigos/registraduría quedan vacíos.
+
+    `zona`/`puesto` acotan los tres conjuntos a esa zona (o zona+puesto) del
+    municipio antes de cruzarlos — ver `filtrar_por_zona_puesto` (nunca admite
+    puesto sin zona).
     """
     mun = str(int(str(municipio)))  # normaliza '01' -> '1'
     lote = Path(base_datos) / nombre_carpeta_lote(catalogo, mun)
     testigos = listar_codigos_en_carpeta(lote / "testigos", normalizar=True)
     registraduria = listar_codigos_en_carpeta(lote / "registraduria", normalizar=True)
+    esperadas = catalogo.codigos_de(mun)
+    if zona is not None:
+        esperadas = set(filtrar_por_zona_puesto(esperadas, zona, puesto))
+        testigos = set(filtrar_por_zona_puesto(testigos, zona, puesto))
+        registraduria = set(filtrar_por_zona_puesto(registraduria, zona, puesto))
     return Cobertura(
         municipio=mun,
         municipio_nombre=catalogo.nombre_municipio(mun),
-        esperadas=catalogo.codigos_de(mun),
+        esperadas=esperadas,
         testigos=testigos,
         registraduria=registraduria,
     )
