@@ -99,7 +99,8 @@ def _etiqueta(col: str) -> str:
         nombre, _ = CANDIDATOS.get(col[1:], (col, ""))
         return f"{col[1:]}. {nombre}"
     return {"blanco": "Votos en blanco", "nulos": "Votos nulos",
-            "no_marcados": "Votos no marcados"}.get(col, col)
+            "no_marcados": "Votos no marcados",
+            "suma_total": "TOTAL VOTOS DE LA MESA"}.get(col, col)
 
 
 def _prompt(cols: list[str]) -> str:

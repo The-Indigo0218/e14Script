@@ -52,8 +52,10 @@ _LAYOUT_POR_PAGINA_MUESTRA = {
 INLIERS_MIN_CONFIABLE = 25
 
 # Qué columnas de voto aporta cada layout (qué casillas hay en cada página).
+# "suma_total" no es voto de candidato: es la casilla "TOTAL VOTOS DE LA MESA"
+# (declarada en el acta), que se usa luego para validar que cuadre con la suma.
 _COLUMNAS_POR_LAYOUT = {
-    LAYOUT_ACTA_COMPLETA: columnas_voto(),
+    LAYOUT_ACTA_COMPLETA: columnas_voto() + ["suma_total"],
     LAYOUT_FIRMAS:        [],
 }
 
