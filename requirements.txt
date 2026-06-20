@@ -4,3 +4,8 @@ numpy==2.4.6
 openpyxl==3.1.5
 requests==2.34.2
 pytest==9.1.0
+
+# Traer los E-14 desde Google Drive (descargar_drive.py)
+google-api-python-client==2.197.0
+google-auth-httplib2==0.4.0
+google-auth-oauthlib==1.4.0

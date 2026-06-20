@@ -20,6 +20,7 @@ auditoria-e14/
 │
 ├── ▶️ Scripts que TÚ ejecutas
 │   ├── auditar.py                → ORQUESTADOR: audita un lote (municipio) de punta a punta
+│   ├── descargar_drive.py        → Trae los E-14 desde una carpeta de Google Drive
 │   ├── cobertura.py              → Tablero de cobertura / detalle de un lote (sin OCR)
 │   ├── leer_testigos.py          → E-14 de testigos (CSV o PDF/OCR)
 │   ├── leer_registraduria.py     → E-14 oficial (PDF + OCR)
@@ -33,6 +34,7 @@ auditoria-e14/
 │   ├── modelo.py                 → ActaE14, 2 candidatos (segunda vuelta), tipo_acta, copias_en_evidencia
 │   ├── almacen.py                → SQLite (actas.db) + historial de re-auditoría
 │   ├── mesa.py                   → Nomenclatura NuMunicipio_zona_puesto_mesa, código canónico, emparejamiento
+│   ├── drive.py                  → Cliente Google Drive (OAuth, listar/descargar recursivo)
 │   ├── catalogo.py               → Excel "Mesa a Mesa" → universo de mesas por municipio
 │   ├── cobertura.py              → Cruza catálogo vs archivos presentes (estados del lote)
 │   ├── alineacion.py             → Capa 1: SIFT + homografía vs plantilla
@@ -50,6 +52,7 @@ auditoria-e14/
 │   ├── test_catalogo.py          → Lectura del Excel (universo, nombres, mojibake)
 │   ├── test_cobertura.py         → Estados del lote
 │   ├── test_auditar.py           → Orquestador (lector falso, sin OCR)
+│   ├── test_drive.py             → Clasificación por nombre + ubicación en el lote (sin red)
 │   └── test_almacen.py           → Persistencia + versionado de re-auditoría
 │
 ├── 📁 Entradas
