@@ -72,6 +72,22 @@ def test_incluir_parciales_procesa_solo_testigo(lote_cartagena, tmp_path):
     alm.cerrar()
 
 
+def test_paralelo_da_el_mismo_resultado_que_secuencial(lote_cartagena, tmp_path):
+    cat, datos = lote_cartagena
+    registro = []
+    alm = Almacen(tmp_path / "t.db")
+    res = procesar_lote(cat, 1, datos, alm, _lector_falso(registro),
+                        incluir_parciales=True, paralelo=4)
+    # Mismo resultado que sin --paralelo: 1_21_1_13 (2 fuentes) + 1_1_1_1 (testigo) = 3.
+    assert res["leidas"] == 3 and res["errores"] == 0
+    assert {(f, c) for f, c, _ in registro} == {
+        (FUENTE_TESTIGO, "1_21_1_13"), (FUENTE_REGISTRADURIA, "1_21_1_13"),
+        (FUENTE_TESTIGO, "1_1_1_1"),
+    }
+    assert set(alm.leer_por_fuente(FUENTE_TESTIGO)) == {"1_21_1_13", "1_1_1_1"}
+    alm.cerrar()
+
+
 def test_limite_recorta_mesas(lote_cartagena, tmp_path):
     cat, datos = lote_cartagena
     alm = Almacen(tmp_path / "t.db")

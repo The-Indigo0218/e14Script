@@ -10,10 +10,15 @@ Orquesta el flujo completo sobre las mesas de un municipio, sin reescribir lógi
 
 Por defecto NO reprocesa mesas ya leídas (ahorra OCR); usa --reauditar para forzar.
 `--limite N` procesa solo las primeras N (control de volumen / costo en una instancia).
+`--paralelo N` lee N actas a la vez (varios hilos llamando a Gemini en simultáneo)
+para acelerar el lote; el guardado en SQLite siempre es secuencial (un hilo a la
+vez), así que es seguro. Default 1 (secuencial, igual que antes). Si ves muchos
+errores 429, bajá el número; Google AI Studio muestra tu límite real de RPM en
+https://aistudio.google.com/rate-limit.
 
 Uso:
     python auditar.py "<excel>" --municipio 1 [--datos datos] [--db actas.db]
-        [--salida comparacion_lote.xlsx] [--limite N] [--reauditar]
+        [--salida comparacion_lote.xlsx] [--limite N] [--reauditar] [--paralelo N]
         [--tipo-testigo claveros|delegados|transmision] [--solo-pagina-1] [--plan]
 """
 
@@ -21,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
@@ -48,10 +54,15 @@ def seleccionar_mesas(cobertura: Cobertura, incluir_parciales: bool = False) -> 
 def procesar_lote(catalogo, municipio: str | int, base_datos: str | Path,
                   alm: Almacen, lector: Lector, *,
                   reauditar: bool = False, limite: int | None = None,
-                  incluir_parciales: bool = False) -> dict:
+                  incluir_parciales: bool = False, paralelo: int = 1) -> dict:
     """
     Lee y guarda las mesas seleccionadas del lote. Devuelve un resumen de conteos.
     No genera el Excel (eso lo hace el caller) para mantenerlo testeable sin OCR.
+
+    `paralelo` > 1 lee varias actas a la vez (hilos) — útil porque cada lectura
+    pasa la mayor parte del tiempo esperando la respuesta de la API de OCR. El
+    guardado en la base (`alm.guardar`) siempre ocurre en el hilo principal, uno
+    a la vez, así que no hay riesgo de escritura concurrente en SQLite.
     """
     cob = cobertura_lote(catalogo, municipio, base_datos)
     lote = Path(base_datos) / nombre_carpeta_lote(catalogo, municipio)
@@ -64,6 +75,8 @@ def procesar_lote(catalogo, municipio: str | int, base_datos: str | Path,
     seleccion = seleccionar_mesas(cob, incluir_parciales)
     res = {"seleccionadas": len(seleccion), "leidas": 0, "saltadas": 0, "errores": 0}
 
+    # ── Paso 1: decidir QUÉ actas hay que leer (sin tocar la red ni el OCR aún) ──
+    tareas: list[tuple[str, str, Path]] = []  # (codigo, fuente, ruta)
     procesadas = 0
     for codigo in seleccion:
         if limite is not None and procesadas >= limite:
@@ -85,14 +98,39 @@ def procesar_lote(catalogo, municipio: str | int, base_datos: str | Path,
                 continue
             if codigo in ya and not reauditar:
                 continue
-            try:
-                acta = lector(ruta, fuente, codigo)
-                alm.guardar(acta)
-                res["leidas"] += 1
-            except Exception as e:  # noqa: BLE001 — un acta mala no debe tumbar el lote
-                res["errores"] += 1
-                print(f"  ⚠ error leyendo {ruta.name}: {e}", file=sys.stderr)
+            tareas.append((codigo, fuente, ruta))
+
+    # ── Paso 2: leer (en paralelo o no) y guardar siempre en el hilo principal ──
+    if paralelo <= 1:
+        for codigo, fuente, ruta in tareas:
+            _leer_y_guardar(lector, alm, codigo, fuente, ruta, res)
+    else:
+        with ThreadPoolExecutor(max_workers=paralelo) as ex:
+            futuros = {
+                ex.submit(lector, ruta, fuente, codigo): (codigo, fuente, ruta)
+                for codigo, fuente, ruta in tareas
+            }
+            for fut in as_completed(futuros):
+                codigo, fuente, ruta = futuros[fut]
+                try:
+                    acta = fut.result()
+                    alm.guardar(acta)
+                    res["leidas"] += 1
+                except Exception as e:  # noqa: BLE001 — un acta mala no debe tumbar el lote
+                    res["errores"] += 1
+                    print(f"  ⚠ error leyendo {ruta.name}: {e}", file=sys.stderr)
     return res
+
+
+def _leer_y_guardar(lector: Lector, alm: Almacen, codigo: str, fuente: str,
+                    ruta: Path, res: dict) -> None:
+    try:
+        acta = lector(ruta, fuente, codigo)
+        alm.guardar(acta)
+        res["leidas"] += 1
+    except Exception as e:  # noqa: BLE001 — un acta mala no debe tumbar el lote
+        res["errores"] += 1
+        print(f"  ⚠ error leyendo {ruta.name}: {e}", file=sys.stderr)
 
 
 def _lector_real(tipo_testigo: str | None, layouts: list[str] | None) -> Lector:
@@ -139,6 +177,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--db", default="actas.db", help="Base SQLite (por defecto: actas.db)")
     p.add_argument("--salida", help="Excel de salida (por defecto: comparacion_lote_<MUN>.xlsx)")
     p.add_argument("--limite", type=int, help="Procesar solo las primeras N mesas")
+    p.add_argument("--paralelo", type=int, default=1,
+                  help="Leer N actas a la vez en hilos (default 1 = secuencial). "
+                       "Sube esto para acelerar el lote; si ves errores 429, bajalo.")
     p.add_argument("--reauditar", action="store_true", help="Reprocesar mesas ya leídas")
     p.add_argument("--incluir-parciales", action="store_true", help="Incluir mesas con una sola fuente")
     p.add_argument("--tipo-testigo", help="Copia del E-14 del testigo (claveros|delegados|transmision)")
@@ -177,7 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     alm = Almacen(args.db)
     res = procesar_lote(catalogo, args.municipio, args.datos, alm, lector,
                         reauditar=args.reauditar, limite=args.limite,
-                        incluir_parciales=args.incluir_parciales)
+                        incluir_parciales=args.incluir_parciales,
+                        paralelo=args.paralelo)
     print(f"\nLeídas {res['leidas']} actas · saltadas {res['saltadas']} (ya en DB) "
           f"· errores {res['errores']}")
 
