@@ -132,7 +132,7 @@ python cobertura.py "ruta/al/…xlsx" --municipio 1 --crear-carpetas
 python auditar.py "ruta/al/…xlsx" --municipio 1 --plan
 
 # d) Auditar el lote: lee pares, guarda en DB y genera el Excel de comparación
-python auditar.py "ruta/al/…xlsx" --municipio 1 --solo-pagina-1 --limite 50
+python auditar.py "ruta/al/…xlsx" --municipio 1 --solo-pagina-1 --limite 50 --paralelo 4
 ```
 
 - **Lote = un municipio** (`--municipio`, el `NuMunicipio` del catálogo).
@@ -140,6 +140,11 @@ python auditar.py "ruta/al/…xlsx" --municipio 1 --solo-pagina-1 --limite 50
   así no se gasta OCR en mesas a medias. `--incluir-parciales` para forzar las demás.
 - **Idempotente**: no reprocesa lo ya leído; `--reauditar` fuerza y **archiva la
   versión anterior** (historial, ver §re-auditoría). `--limite N` acota el volumen.
+- **`--paralelo N`** lee N actas a la vez (varios hilos llamando a Gemini en
+  simultáneo) para terminar el lote más rápido. El cuello de botella de cada lectura
+  es esperar la respuesta de la API, no CPU, así que paraleliza bien. Empezá con
+  `--paralelo 4` y subí mientras no veas errores `429`; tu límite real de RPM está en
+  https://aistudio.google.com/rate-limit (varía según tu tier de facturación).
 - Internamente reutiliza el pipeline de los scripts de abajo (mismo `leer_acta_pdf`
   + `comparar`). Esos scripts siguen sirviendo para procesar un archivo suelto.
 
@@ -314,6 +319,7 @@ Por defecto: testigos sin `--tipo` → `desconocido`; registraduría → `delega
 | `--municipio N` / `-m N` | Lote a auditar (el `NuMunicipio` del catálogo). Obligatorio. |
 | `--plan` | Listar qué mesas se procesarían y salir (**no gasta OCR**) |
 | `--limite N` | Procesar solo las primeras N mesas (control de volumen/costo) |
+| `--paralelo N` | Leer N actas a la vez en hilos (default 1 = secuencial). Acelera el lote; el guardado en SQLite sigue siendo secuencial. Si ves `429`, bajalo — el límite real de RPM está en https://aistudio.google.com/rate-limit |
 | `--reauditar` | Reprocesar mesas ya leídas (archiva la versión anterior) |
 | `--incluir-parciales` | Incluir mesas con una sola fuente (por defecto solo las **listas**) |
 | `--tipo-testigo`, `--solo-pagina-1` | Igual que en los lectores |
