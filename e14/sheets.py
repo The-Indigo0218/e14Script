@@ -28,6 +28,20 @@ def construir_servicio(creds):
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
 
+def crear_hoja(servicio, titulo: str) -> str:
+    """
+    Crea una hoja de cálculo nueva (con su pestaña "Panel" ya armada) y
+    devuelve su id. Ojo: NO la comparte con nadie — queda privada a tu cuenta
+    hasta que la compartas a mano desde Sheets (botón "Compartir").
+    """
+    cuerpo = {
+        "properties": {"title": titulo},
+        "sheets": [{"properties": {"title": _HOJA}}],
+    }
+    resp = servicio.spreadsheets().create(body=cuerpo, fields="spreadsheetId").execute()
+    return resp["spreadsheetId"]
+
+
 def asegurar_encabezado(servicio, hoja_id: str) -> None:
     """Crea la fila de encabezado en la hoja 'Panel' si todavía no existe (idempotente)."""
     resp = servicio.spreadsheets().values().get(
