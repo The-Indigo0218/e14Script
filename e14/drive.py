@@ -27,6 +27,7 @@ permisos.
 
 from __future__ import annotations
 
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +36,25 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 _MIME_CARPETA = "application/vnd.google-apps.folder"
+
+
+def _forzar_ipv4() -> None:
+    """
+    En redes con IPv6 mal configurado (típico en algunas VPN/proxies), resolver
+    googleapis.com devuelve direcciones IPv6 que no conectan: Python tarda ~30s
+    en agotar ese intento antes de caer a IPv4, más lento que el timeout interno
+    de httplib2/googleapiclient -> TimeoutError aunque la red funcione bien por
+    IPv4. Forzamos getaddrinfo a devolver solo IPv4 para evitar ese intento.
+    """
+    original = socket.getaddrinfo
+
+    def _solo_ipv4(*args, **kwargs):
+        return [r for r in original(*args, **kwargs) if r[0] == socket.AF_INET]
+
+    socket.getaddrinfo = _solo_ipv4
+
+
+_forzar_ipv4()
 
 
 @dataclass(frozen=True)
@@ -130,6 +150,19 @@ def descargar_archivo(servicio, archivo_id: str, destino: Path) -> None:
         listo = False
         while not listo:
             _, listo = descargador.next_chunk()
+
+
+def crear_carpeta(servicio, nombre: str, padre_id: str | None = None) -> str:
+    """
+    Crea una carpeta nueva en Drive (en tu Mi unidad, o dentro de `padre_id` si
+    se da). Devuelve su id. Ojo: NO la comparte con nadie — queda privada a tu
+    cuenta hasta que la compartas a mano desde Drive (botón "Compartir").
+    """
+    cuerpo: dict = {"name": nombre, "mimeType": _MIME_CARPETA}
+    if padre_id:
+        cuerpo["parents"] = [padre_id]
+    archivo = servicio.files().create(body=cuerpo, fields="id").execute()
+    return archivo["id"]
 
 
 def subir_archivo(servicio, ruta_local: str | Path, carpeta_id: str,

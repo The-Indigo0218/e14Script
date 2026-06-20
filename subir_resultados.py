@@ -7,12 +7,19 @@ estado "Pendiente" en la hoja "Panel". La fusión a la base maestra la hace
 `consolidar_resultados.py`, y SOLO de las filas que alguien marque "Aprobado"
 a mano en la hoja (edición normal de Sheets, en tiempo real).
 
-Primera vez: ver README → "Traer los E-14 desde Google Drive" / "Centralizar
-resultados" para crear drive_credentials.json y la hoja de cálculo maestra.
+Si no pasás `--carpeta-drive` y/o `--hoja`, los CREA (carpeta nueva en tu Mi
+unidad / hoja nueva) e imprime sus IDs al final para que los reutilices la
+próxima vez y los compartas con el equipo. OJO: lo que crea queda PRIVADO a tu
+cuenta — ver README → "Centralizar resultados" sobre cómo compartirlo (las
+fotos del E-14 traen cédulas de los jurados a la vista; no recomendamos
+hacerlo público en internet, solo compartido con el equipo).
+
+Primera vez: ver README → "Traer los E-14 desde Google Drive" para crear
+drive_credentials.json.
 
 Uso:
     python subir_resultados.py actas.db --persona "juan" \
-        --carpeta-drive <ID_CARPETA_RESULTADOS> --hoja <ID_HOJA_MAESTRA> \
+        [--carpeta-drive <ID_CARPETA_RESULTADOS>] [--hoja <ID_HOJA_MAESTRA>] \
         [--municipio 1] [--zona 1] [--puesto 1]
 """
 
@@ -52,8 +59,8 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("db", help="Base SQLite local a subir (ej. actas.db)")
     p.add_argument("--persona", required=True, help="Tu nombre (identifica la fila en el panel)")
-    p.add_argument("--carpeta-drive", required=True, help="ID de la carpeta de resultados en Drive")
-    p.add_argument("--hoja", required=True, help="ID de la hoja de cálculo maestra (de su URL)")
+    p.add_argument("--carpeta-drive", help="ID de la carpeta de resultados en Drive. Si se omite, se crea una nueva.")
+    p.add_argument("--hoja", help="ID de la hoja de cálculo maestra. Si se omite, se crea una nueva.")
     p.add_argument("--municipio", default="")
     p.add_argument("--zona", default="")
     p.add_argument("--puesto", default="")
@@ -69,8 +76,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Resumen local: {r['total']} mesas · {r['COINCIDE']} coinciden · "
           f"{r['DISCREPANCIA']} discrepancia · {r['confianza_baja']} casillas confianza baja")
 
-    from e14.drive import autenticar, construir_servicio as construir_drive, subir_archivo
-    from e14.sheets import agregar_fila, asegurar_encabezado, construir_servicio as construir_sheets
+    from e14.drive import autenticar, construir_servicio as construir_drive, crear_carpeta, subir_archivo
+    from e14.sheets import agregar_fila, asegurar_encabezado, construir_servicio as construir_sheets, crear_hoja
 
     try:
         creds = autenticar(args.credenciales, args.token)
@@ -80,20 +87,36 @@ def main(argv: list[str] | None = None) -> int:
     drive = construir_drive(creds)
     sheets = construir_sheets(creds)
 
+    carpeta_id = args.carpeta_drive
+    if not carpeta_id:
+        carpeta_id = crear_carpeta(drive, "Resultados auditoría E-14")
+        print(f"   ✓ Carpeta de resultados creada en Drive (privada): {carpeta_id}")
+
+    hoja_id = args.hoja
+    if not hoja_id:
+        hoja_id = crear_hoja(sheets, "Panel de auditoría E-14")
+        print(f"   ✓ Hoja maestra creada (privada): {hoja_id}")
+
+    if not args.carpeta_drive or not args.hoja:
+        print("   ⚠️  Lo recién creado queda PRIVADO a tu cuenta de Google. Compartilo desde "
+              "Drive/Sheets (botón \"Compartir\") con el equipo antes de que otros lo usen, "
+              "y reutilizá estos IDs en --carpeta-drive/--hoja la próxima vez.")
+
     nombre_archivo = f"{_slug(args.persona)}.db"
     print(f"Subiendo {args.db} -> Drive/{nombre_archivo} ...")
-    archivo_id = subir_archivo(drive, args.db, args.carpeta_drive, nombre_archivo)
+    archivo_id = subir_archivo(drive, args.db, carpeta_id, nombre_archivo)
     print(f"   ✓ Subido (id Drive: {archivo_id})")
 
-    asegurar_encabezado(sheets, args.hoja)
+    asegurar_encabezado(sheets, hoja_id)
     fila = [
         args.persona, datetime.now().strftime("%Y-%m-%d %H:%M"),
         args.municipio, args.zona, args.puesto,
         r["total"], r["COINCIDE"], r["DISCREPANCIA"], r["confianza_baja"],
         archivo_id, "", "Pendiente",
     ]
-    agregar_fila(sheets, args.hoja, fila)
+    agregar_fila(sheets, hoja_id, fila)
     print("   ✓ Fila agregada al panel maestro (estado: Pendiente de aprobación)")
+    print(f"\nIDs para reutilizar: --carpeta-drive {carpeta_id} --hoja {hoja_id}")
     return 0
 
 
