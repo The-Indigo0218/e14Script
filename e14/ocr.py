@@ -194,7 +194,7 @@ class BackendGemini:
     nombre = "gemini"
     URL = "https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
 
-    def __init__(self, api_key: str, modelo: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, modelo: str = "gemini-3.5-flash"):
         self.api_key = api_key
         self.modelo = modelo
 
@@ -285,7 +285,7 @@ def crear_backend(preferido: str | None = None):
         return BackendManual()
     if elegido == "gemini" or (not elegido and gem):
         if gem:
-            return BackendGemini(gem, os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
+            return BackendGemini(gem, os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"))
     if elegido == "gpt" or (not elegido and gpt):
         if gpt:
             return BackendGPT(gpt, os.environ.get("OPENAI_MODEL", "gpt-4o"))

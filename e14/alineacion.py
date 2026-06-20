@@ -104,10 +104,16 @@ class ResultadoAlineacion:
 class Alineador:
     """Carga la plantilla oficial una sola vez y alinea escaneos contra ella."""
 
-    def __init__(self, plantilla_pdf: str | Path, dpi: int = 150, nfeatures: int = 8000):
+    def __init__(self, plantilla_pdf: str | Path, dpi: int = 150, nfeatures: int = 20000):
         self.dpi = dpi
         self._sift = cv2.SIFT_create(nfeatures=nfeatures)
-        self._bf = cv2.BFMatcher(cv2.NORM_L2)
+        # crossCheck (en vez de solo ratio test) descarta los matches espurios que
+        # produce un acta real: glifos repetidos (asteriscos de relleno, QR, fotos
+        # de candidatos) que el ratio test por sí solo confunde entre sí. Un único
+        # punto de la plantilla emparejado con decenas de puntos del escaneo hace
+        # que findHomography ajuste una matriz degenerada (todo el folio colapsa a
+        # un punto al deformarlo) aunque el conteo de inliers parezca alto.
+        self._bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
         self._layouts: list[_LayoutPlantilla] = []
 
         paginas = render_pdf_gris(plantilla_pdf, dpi=dpi)
@@ -122,13 +128,14 @@ class Alineador:
     def _alinear_contra(self, kp_scan, des_scan, scan_gris, layout: _LayoutPlantilla):
         if des_scan is None or layout.descriptores is None:
             return 0, None
-        matches = self._bf.knnMatch(des_scan, layout.descriptores, k=2)
-        buenos = [m for m, n in matches if m.distance < 0.75 * n.distance]
+        buenos = self._bf.match(des_scan, layout.descriptores)
         if len(buenos) < 12:
             return len(buenos), None
         src = np.float32([kp_scan[m.queryIdx].pt for m in buenos]).reshape(-1, 1, 2)
         dst = np.float32([layout.keypoints[m.trainIdx].pt for m in buenos]).reshape(-1, 1, 2)
-        H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)
+        # MAGSAC es más robusto que RANSAC plano ante los matches espurios que
+        # sobreviven al crossCheck en folios con texto/iconos muy repetitivos.
+        H, mask = cv2.findHomography(src, dst, cv2.USAC_MAGSAC, 5.0)
         if H is None or mask is None:
             return 0, None
         inliers = int(mask.sum())

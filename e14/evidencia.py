@@ -107,7 +107,7 @@ def detectar_copias_con_gemini(imagen_gris: np.ndarray) -> tuple[list[str], str 
     if not api_key:
         return [], "Sin GEMINI_API_KEY para detectar copias en imagen."
 
-    modelo = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    modelo = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     ok, buf = cv2.imencode(".png", imagen_gris)
     if not ok:
         return [], "No se pudo codificar la imagen."

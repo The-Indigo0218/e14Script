@@ -61,9 +61,17 @@ imposible mirando sólo píxeles).
 - **Por qué:** una sola operación corrige rotación (incluido 180°), inclinación,
   escala y perspectiva; es **offline y gratis**; y como la plantilla es de posición
   conocida, deja **cada casilla en coordenadas fijas** → recorte exacto para el OCR.
-- **Evidencia:** ya probado sobre un acta real; las páginas de votos alinean bien
-  (60–76 inliers) y el número de inliers sirve de **control de calidad** (pocos
-  inliers ⇒ marcar para revisión).
+- **Evidencia:** ya probado sobre actas reales; las páginas de votos alinean bien
+  (decenas a ~150 inliers) y el número de inliers sirve de **control de calidad**
+  (pocos inliers ⇒ marcar para revisión).
+- **Matching robusto a glifos repetidos (2026-06-20):** en E-14 reales, el ratio
+  test simple de SIFT confundía elementos repetidos del formulario (asteriscos de
+  relleno, QR, fotos de candidatos): muchos puntos del escaneo emparejaban con un
+  ÚNICO punto de la plantilla, y `findHomography` ajustaba una matriz degenerada
+  (la imagen alineada colapsaba a un punto) aunque el conteo de inliers pasara el
+  umbral de "confiable". Se corrigió con matching `crossCheck` + `USAC_MAGSAC` (en
+  vez de RANSAC plano) y más features SIFT (20000). Lección: el conteo de inliers
+  por sí solo no es señal suficiente de que la homografía sea válida.
 
 ### 3.3. Capa 2 — OCR con modelo multimodal en la nube
 
@@ -88,6 +96,12 @@ devolver **JSON estructurado con confianza** por casilla.
   puede pedir una **segunda lectura con GPT**; si ambos coinciden, la confianza sube;
   si no, va a revisión. Esto es opcional y se activa sólo cuando vale la pena (poco
   costo extra, sólo en casos dudosos).
+- **Modelo Gemini por defecto: `gemini-3.5-flash`** (antes `gemini-2.5-flash`).
+  **Evidencia (2026-06-20, rama `pruebas-segunda-vuelta-2022`):** contra un E-14
+  real, `gemini-2.5-flash` leyó 87 votos donde el acta dice 89 (confianza
+  reportada 95%, o sea el número alto NO garantiza exactitud); `gemini-3.5-flash`
+  leyó el valor correcto con 95-100% de confianza, sobre la misma imagen alineada.
+  `gemini-2.5-pro` no es opción en el tier gratis (cuota 0, requiere facturación).
 - **Aislamiento:** el proveedor vive detrás de una interfaz (`e14/ocr.py`), así que
   cambiar Gemini↔GPT no toca el resto del sistema.
 
