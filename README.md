@@ -294,6 +294,39 @@ python leer_identificadores.py actas.db --municipio 1 --zona 1 --puesto 3
   hace una llamada liviana solo por KIT/CIV — no vuelve a tocar los votos ni
   archiva historial. Acepta `--fuente testigo|registraduria` y `--paralelo N`.
 
+### 5.2. Día de elección: testigos a medida que llegan
+
+Mientras llegan los E-14 oficiales (hay un rango de ~2 h tras cerrar urnas), los
+testigos ya están disponibles. `procesar_testigos.py` OCRea los testigos que vas
+pegando en `datos/.../testigos/` e **ignora los que ya están cargados**, así lo
+podés correr una y otra vez (o en bucle) sin re-gastar OCR. No necesita catálogo
+ni la Registraduría; la comparación se hace después con `auditar.py`.
+
+```bash
+# Bucle: re-escanea cada 20 s y procesa solo lo nuevo (Ctrl-C para parar).
+python procesar_testigos.py --vigilar --paralelo 4
+# Una sola pasada:
+python procesar_testigos.py
+```
+
+Flags: `--vigilar [SEG]`, `--paralelo N`, `--recortar-votos`, `--tipo`,
+`--reauditar` (re-procesa los ya cargados, archivando la versión previa).
+
+**Varias copias en una imagen.** Un testigo puede subir en UNA imagen los 2-3
+ejemplares (claveros/delegados/transmisión) juntos —lado a lado o apilados—. El
+lector **segmenta** la imagen, alinea cada copia por separado y lee los votos de
+cada una. Como todas las copias traen los mismos votos, con leer una basta; si se
+leen 2+ y **discrepan** en algún voto, la mesa se marca para revisión (señal de
+auditoría). No hay que indicar cuántas copias hay: se detectan solas
+(`e14/segmentacion.py`).
+
+**Recorte de la región de votación (`--recortar-votos`).** Tras alinear, recorta
+a la tabla de votación (candidatos + blanco/nulos/no marcados + total) antes del
+OCR: menos tokens y lectura más enfocada, descartando cabecera y firmas (cédulas
+de jurados). Es opt-in (el ROI por defecto es de la plantilla 2026). El banco de
+pruebas `probar_recorte.py <foto> --verdad c1,c2,blanco,nulos,no_marcados,suma`
+compara variantes de recorte contra la verdad conocida.
+
 ### 6. Flujo manual por script: primero oficial, luego testigo
 
 **Orden sugerido** (1 llamada API por script, sin bucles):
@@ -435,20 +468,23 @@ e14/                    paquete con la lógica
   mesa.py               nomenclatura NuMunicipio_zona_puesto_mesa, código canónico, emparejamiento
   catalogo.py           Excel "Mesa a Mesa" → universo de mesas por municipio
   cobertura.py          cruza catálogo vs archivos presentes (estados del lote)
-  alineacion.py         CAPA 1: SIFT + homografía vs plantilla
-  preprocess.py         recorte de negro, zoom, CLAHE antes del OCR
+  alineacion.py         CAPA 1: SIFT + homografía vs plantilla (+ ROI de votación)
+  segmentacion.py       varias copias en una imagen → 1 acta por copia
+  preprocess.py         recorte de negro/región de votación, zoom, CLAHE antes del OCR
   ocr.py                CAPA 2: Gemini / GPT / manual
   evidencia.py          detectar copias visibles en la foto
-  lectura.py            PDF → ActaE14 (une capas 1 y 2)
+  lectura.py            PDF/foto → ActaE14 (segmentación + capas 1 y 2, consolida copias)
   comparador.py         CAPA 3: lógica de comparación
 auditar.py              ORQUESTADOR: audita un lote (municipio) de punta a punta
+procesar_testigos.py    día de elección: OCR de testigos nuevos (idempotente, --vigilar)
+probar_recorte.py       banco de pruebas del recorte de la región de votación
 cobertura.py            SCRIPT: tablero de cobertura / detalle de un lote
 leer_testigos.py        SCRIPT 1: testigo (CSV o PDF) → tabla
 leer_registraduria.py   SCRIPT 2: oficial PDF → tabla
 comparar.py             SCRIPT 3: cruza fuentes → Excel
 probar_api.py           ping mínimo a Gemini/GPT
 cli_args.py             flags --tipo, --codigo, --solo-pagina-1
-tests/                  pruebas pytest (catálogo, cobertura, orquestador, almacén, mesa)
+tests/                  pruebas pytest (catálogo, cobertura, orquestador, almacén, mesa, recorte, segmentación)
 plantillas/             E-14 en blanco oficial de segunda vuelta (alineación)
 datos/
   <NN_nombre>/          un LOTE = un municipio (ej. 01_cartagena/)
@@ -513,6 +549,7 @@ Por defecto: testigos sin `--tipo` → `desconocido`; registraduría → `delega
 | `--verificar-baja-confianza` | Doble lectura con GPT, solo en casillas con confianza < 80% (requiere `OPENAI_API_KEY`). **Apagado salvo que se pida con este flag.** |
 | `--reauditar` | Reprocesar mesas ya leídas (archiva la versión anterior) |
 | `--incluir-parciales` | Incluir mesas con una sola fuente (por defecto solo las **listas**) |
+| `--recortar-votos` | Recortar a la región de votación antes del OCR (ahorra tokens; solo con alineación confiable). También por `OCR_RECORTAR_VOTOS=1` |
 | `--tipo-testigo`, `--solo-pagina-1` | Igual que en los lectores |
 | `--datos`, `--db`, `--salida` | Carpeta base, SQLite y Excel de salida |
 

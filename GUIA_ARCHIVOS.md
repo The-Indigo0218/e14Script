@@ -20,6 +20,8 @@ auditoria-e14/
 │
 ├── ▶️ Scripts que TÚ ejecutas
 │   ├── auditar.py                → ORQUESTADOR: audita un lote (municipio) de punta a punta
+│   ├── procesar_testigos.py      → Día de elección: OCR de testigos nuevos, ignora los ya cargados (--vigilar)
+│   ├── probar_recorte.py         → Banco de pruebas del recorte de la región de votación (tokens vs precisión)
 │   ├── descargar_drive.py        → Trae los E-14 desde una carpeta de Google Drive
 │   ├── subir_resultados.py       → Sube actas.db a Drive + fila en el panel de Sheets
 │   ├── consolidar_resultados.py  → Mergea a la base maestra SOLO lo aprobado en el panel
@@ -40,11 +42,12 @@ auditoria-e14/
 │   ├── sheets.py                 → Cliente Google Sheets (panel maestro de resultados)
 │   ├── catalogo.py               → Excel "Mesa a Mesa" → universo de mesas por municipio
 │   ├── cobertura.py              → Cruza catálogo vs archivos presentes (estados del lote)
-│   ├── alineacion.py             → Capa 1: SIFT + homografía vs plantilla
-│   ├── preprocess.py             → Recorte negro, zoom, CLAHE antes del OCR
+│   ├── alineacion.py             → Capa 1: SIFT + homografía vs plantilla (+ ROI de votación por layout)
+│   ├── segmentacion.py           → Varias copias en una imagen → 1 acta por copia (corta y alinea cada una)
+│   ├── preprocess.py             → Recorte negro/región de votación, zoom, CLAHE antes del OCR
 │   ├── ocr.py                    → Capa 2: Gemini / GPT / manual + informe API
 │   ├── evidencia.py              → Detectar copias visibles (Claveros, Delegados…)
-│   ├── lectura.py                → Orquesta evidencia + alineación + OCR → ActaE14
+│   ├── lectura.py                → Orquesta evidencia + segmentación + alineación + OCR → ActaE14 (consolida copias)
 │   ├── informe.py                → Tabla legible de votos en consola
 │   ├── comparador.py             → Capa 3: comparar (estados SIN_LECTURA, etc.)
 │   └── __init__.py
@@ -59,7 +62,11 @@ auditoria-e14/
 │   ├── test_ocr_verificacion.py  → Doble lectura GPT en casillas de confianza baja (sin red)
 │   ├── test_subir_resultados.py  → Resumen local para el panel (sin red)
 │   ├── test_consolidar_resultados.py → Merge entre bases SQLite locales (sin red)
-│   └── test_almacen.py           → Persistencia + versionado de re-auditoría
+│   ├── test_almacen.py           → Persistencia + versionado de re-auditoría
+│   ├── test_preprocess.py        → Recorte de la región de votación (fracciones)
+│   ├── test_lectura_recorte.py   → Recorte opt-in cableado en leer_acta_pdf
+│   ├── test_segmentacion.py      → Cortes/esquemas y detección de varias copias
+│   └── test_procesar_testigos.py → Pase de testigos idempotente (salta ya cargados)
 │
 ├── 📁 Entradas
 │   ├── datos/<NN_nombre>/        → un LOTE = un municipio (ej. 01_cartagena/)
@@ -86,7 +93,8 @@ Un **lote = un municipio**. El Excel "Mesa a Mesa" de la Registraduría es el ca
 | Archivo | Qué hace |
 |---------|----------|
 | **`cobertura.py`** | Lee el catálogo (Excel) y dice, por municipio, cuántas mesas hay y cuántas están **listas** (testigo + oficial). Tablero del departamento o detalle de un lote; `--crear-carpetas` arma `datos/<NN_nombre>/`. No gasta OCR. |
-| **`auditar.py`** | **Orquestador.** Para un `--municipio`: calcula cobertura, selecciona las mesas listas, las lee con el pipeline (Capa 1 + OCR), guarda con código canónico y genera el Excel de comparación. `--plan`, `--limite`, `--reauditar`, `--incluir-parciales`, `--paralelo`, `--zona`/`--puesto` (nunca puesto sin zona). |
+| **`auditar.py`** | **Orquestador.** Para un `--municipio`: calcula cobertura, selecciona las mesas listas, las lee con el pipeline (Capa 1 + OCR), guarda con código canónico y genera el Excel de comparación. `--plan`, `--limite`, `--reauditar`, `--incluir-parciales`, `--paralelo`, `--zona`/`--puesto` (nunca puesto sin zona), `--recortar-votos` (recorta a la región de votación, ahorra tokens). |
+| **`procesar_testigos.py`** | **Día de elección.** OCR de los testigos que vas pegando en `datos/.../testigos/`, **ignorando los ya cargados** (idempotente). `--vigilar [SEG]` corre en bucle y procesa solo lo nuevo; `--paralelo`, `--recortar-votos`, `--reauditar`. No necesita catálogo ni la Registraduría. |
 | **`descargar_drive.py`** | Trae E-14 desde una carpeta de Google Drive (recursivo, clasifica por nombre de archivo, no le importa la estructura de carpetas). Idempotente; `--dry-run`. |
 | **`subir_resultados.py`** | Sube tu `actas.db` local a Drive y agrega una fila de resumen al panel maestro de Sheets (estado "Pendiente"). |
 | **`consolidar_resultados.py`** | Mergea a una base maestra SOLO las filas que alguien marcó "Aprobado" en el panel; las marca "Mergeado" para no repetir. Conserva el versionado de `Almacen`. |
