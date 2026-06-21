@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
-from e14.almacen import Almacen
+import sqlite3
+
+from e14.almacen import Almacen, _TODAS
 from e14.modelo import ActaE14, FUENTE_TESTIGO
+
+# Columnas agregadas en este pliego de cambios (las que _migrar_columnas() debe
+# poder sumarle a una base vieja que no las tenía).
+_COLUMNAS_NUEVAS = {
+    "copias_en_evidencia", "verificado_manualmente", "notas_verificacion",
+    "numero_kit", "civ", "confianza_kit", "confianza_civ",
+}
+_COLUMNAS_VIEJAS = [c for c in _TODAS if c not in _COLUMNAS_NUEVAS]
 
 
 def _acta(c1, c2):
@@ -27,6 +37,33 @@ def test_civ_numerico_se_guarda_como_texto_no_como_entero(tmp_path):
     fila = alm.leer_por_fuente(FUENTE_TESTIGO)["1_21_1_13"]
     assert fila["civ"] == "4098007"
     assert isinstance(fila["civ"], str)
+    alm.cerrar()
+
+
+def test_archiva_sin_romper_en_db_vieja_sin_columnas_kit_civ(tmp_path):
+    """Bug real: actas_historial no se migraba como actas, así que re-auditar una
+    mesa de una base creada ANTES de agregar numero_kit/civ rompía al archivar."""
+    ruta = tmp_path / "vieja.db"
+    con = sqlite3.connect(ruta)
+    cols_actas = ", ".join(f"{c} TEXT" for c in _COLUMNAS_VIEJAS)
+    con.execute(
+        f"CREATE TABLE actas ({cols_actas}, PRIMARY KEY (codigo_mesa, fuente))"
+    )
+    cols_hist = ", ".join(f"{c} TEXT" for c in _COLUMNAS_VIEJAS)
+    con.execute(
+        f"CREATE TABLE actas_historial (version INTEGER, archivado_en TEXT, {cols_hist}, "
+        "PRIMARY KEY (codigo_mesa, fuente, version))"
+    )
+    con.execute("INSERT INTO actas (codigo_mesa, fuente, c1, c2) VALUES (?, ?, ?, ?)",
+               ("1_21_1_13", FUENTE_TESTIGO, 10, 5))
+    con.commit()
+    con.close()
+
+    alm = Almacen(ruta)  # debe migrar ambas tablas sin tocar lo ya guardado
+    alm.guardar(_acta(20, 8))  # re-auditar: dispara _archivar() sobre la versión vieja
+    hist = alm.historial("1_21_1_13", FUENTE_TESTIGO)
+    assert len(hist) == 1
+    assert (int(hist[0]["c1"]), int(hist[0]["c2"])) == (10, 5)
     alm.cerrar()
 
 
