@@ -41,23 +41,24 @@ class Almacen:
         self._migrar_columnas()
 
     def _migrar_columnas(self) -> None:
-        """Añade columnas nuevas en bases de datos ya existentes."""
+        """Añade a `actas` y `actas_historial` las columnas que falten en bases ya existentes."""
+        tipos = {
+            "copias_en_evidencia": "TEXT", "verificado_manualmente": "INTEGER",
+            "notas_verificacion": "TEXT", "numero_kit": "TEXT", "civ": "TEXT",
+            "confianza_kit": "REAL", "confianza_civ": "REAL",
+        }
         cur = self.con.execute("PRAGMA table_info(actas)")
         existentes = {row[1] for row in cur.fetchall()}
-        if "copias_en_evidencia" not in existentes:
-            self.con.execute("ALTER TABLE actas ADD COLUMN copias_en_evidencia TEXT")
-        if "verificado_manualmente" not in existentes:
-            self.con.execute("ALTER TABLE actas ADD COLUMN verificado_manualmente INTEGER")
-        if "notas_verificacion" not in existentes:
-            self.con.execute("ALTER TABLE actas ADD COLUMN notas_verificacion TEXT")
-        if "numero_kit" not in existentes:
-            self.con.execute("ALTER TABLE actas ADD COLUMN numero_kit TEXT")
-        if "civ" not in existentes:
-            self.con.execute("ALTER TABLE actas ADD COLUMN civ TEXT")
-        if "confianza_kit" not in existentes:
-            self.con.execute("ALTER TABLE actas ADD COLUMN confianza_kit REAL")
-        if "confianza_civ" not in existentes:
-            self.con.execute("ALTER TABLE actas ADD COLUMN confianza_civ REAL")
+        for col, tipo in tipos.items():
+            if col not in existentes:
+                self.con.execute(f"ALTER TABLE actas ADD COLUMN {col} {tipo}")
+
+        # `actas_historial` guarda todo como TEXT (es solo histórico, ver _crear_tabla_historial).
+        cur_h = self.con.execute("PRAGMA table_info(actas_historial)")
+        existentes_h = {row[1] for row in cur_h.fetchall()}
+        for col in tipos:
+            if col not in existentes_h:
+                self.con.execute(f"ALTER TABLE actas_historial ADD COLUMN {col} TEXT")
         self.con.commit()
 
     def _crear_tabla(self) -> None:
