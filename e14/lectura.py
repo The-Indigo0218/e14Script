@@ -123,6 +123,12 @@ def leer_acta_pdf(pdf_path: str, alineador: Alineador, ocr, fuente: str,
         for col in cols_layout:
             if lectura.valores.get(col) is not None:
                 setattr(acta, col, lectura.valores[col])
+        if lectura.numero_kit and not acta.numero_kit:
+            acta.numero_kit = lectura.numero_kit
+            acta.confianza_kit = lectura.confianza_kit
+        if lectura.civ and not acta.civ:
+            acta.civ = lectura.civ
+            acta.confianza_civ = lectura.confianza_civ
         # Solo promediar confianza de lecturas que sí extrajeron algo (evita diluir con páginas basura).
         if any(lectura.valores.get(c) is not None for c in cols_layout):
             confianzas.append(lectura.confianza_global)
