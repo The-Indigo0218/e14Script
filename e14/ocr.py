@@ -314,6 +314,62 @@ class BackendGPT:
         return _parsear_respuesta(texto, cols)
 
 
+# ─── Backend OpenRouter (REST, OpenAI-compatible) ─────────────────────────────
+class BackendOpenRouter:
+    """
+    Útil cuando facturar DIRECTO con el proveedor del modelo no es viable (ej.
+    Google Cloud Billing no acepta la cuenta/tarjeta) pero OpenRouter sí —
+    funciona con saldo prepago. Mismo formato de pedido que BackendGPT (la API
+    de OpenRouter es compatible con la de OpenAI); lo que cambia es la URL, la
+    clave, y que el modelo se eligen por su "slug" de OpenRouter
+    (ej. "google/gemini-3.5-flash").
+
+    OJO: verificá el slug exacto en https://openrouter.ai/models antes de usar
+    — los nombres no siempre coinciden 1:1 con los del proveedor original, y
+    si el slug no existe la API devuelve error (queda en notas, no se inventa
+    nada).
+    """
+    nombre = "openrouter"
+    URL = "https://openrouter.ai/api/v1/chat/completions"
+
+    def __init__(self, api_key: str, modelo: str):
+        self.api_key = api_key
+        self.modelo = modelo
+
+    def reconocer_votos(self, imagen_alineada, layout_id: str) -> LecturaOCR:
+        import requests
+        cols = columnas_de_layout(layout_id)
+        if not cols:
+            return LecturaOCR({}, {}, 0.0, False, "Layout sin casillas de voto.")
+        b64 = _imagen_a_base64_png(imagen_alineada)
+        cuerpo = {
+            "model": self.modelo,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _prompt(cols)},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                ],
+            }],
+        }
+        try:
+            r = requests.post(
+                self.URL,
+                headers={"Authorization": f"Bearer {self.api_key}",
+                        "X-Title": "Auditoria E14"},
+                json=cuerpo, timeout=60,
+            )
+            r.raise_for_status()
+            texto = r.json()["choices"][0]["message"]["content"]
+        except Exception as e:  # noqa: BLE001
+            return LecturaOCR({c: None for c in cols}, {c: 0.0 for c in cols},
+                              0.0, True, f"Error OpenRouter: {e}")
+        return _parsear_respuesta(texto, cols)
+
+
 # ─── Verificador: segunda lectura con OTRO modelo, solo para casillas dudosas ──
 class BackendVerificado:
     """
@@ -376,9 +432,15 @@ class BackendVerificado:
 def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool | None = None):
     """
     Devuelve el backend a usar.
-      • OCR_BACKEND=gemini|gpt|manual fuerza uno.
-      • Si no, usa Gemini si hay GEMINI_API_KEY, luego GPT si hay OPENAI_API_KEY.
-      • Si no hay claves, BackendManual.
+      • OCR_BACKEND=gemini|gpt|openrouter|manual fuerza uno.
+      • Si no, usa Gemini si hay GEMINI_API_KEY, luego GPT si hay OPENAI_API_KEY,
+        luego OpenRouter si hay OPENROUTER_API_KEY.
+      • Si no hay ninguna clave, BackendManual.
+      • OpenRouter (BackendOpenRouter): pensado para cuando facturar directo con
+        Google/OpenAI no es viable (ej. problemas con Google Cloud Billing) pero
+        sí se puede cargar saldo en OpenRouter. Modelo por OPENROUTER_MODEL (su
+        "slug" en https://openrouter.ai/models, ej. "google/gemini-3.5-flash" —
+        verificá el nombre exacto ahí, default abajo es una suposición).
       • Doble verificación con GPT (cuando el principal es Gemini): SOLO si se
         pide explícitamente, nunca por defecto — `verificar_baja_confianza=True`
         (ej. desde --verificar-baja-confianza en auditar.py) o, si no se pasa
@@ -391,6 +453,7 @@ def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool |
 
     gem = os.environ.get("GEMINI_API_KEY")
     gpt = os.environ.get("OPENAI_API_KEY")
+    openrouter = os.environ.get("OPENROUTER_API_KEY")
     if verificar_baja_confianza is None:
         verificar = os.environ.get("OCR_VERIFICAR_BAJA_CONFIANZA", "").lower() in ("1", "true", "yes")
     else:
@@ -408,6 +471,11 @@ def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool |
     if elegido == "gpt" or (not elegido and gpt):
         if gpt:
             return BackendGPT(gpt, os.environ.get("OPENAI_MODEL", "gpt-4o"))
+    if elegido == "openrouter" or (not elegido and openrouter):
+        if openrouter:
+            return BackendOpenRouter(
+                openrouter, os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash")
+            )
     return BackendManual()
 
 

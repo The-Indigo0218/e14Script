@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from e14.ocr import BackendGemini, BackendVerificado, LecturaOCR, UMBRAL_REVISION, crear_backend
+from e14.ocr import (BackendGemini, BackendOpenRouter, BackendVerificado, LecturaOCR,
+                    UMBRAL_REVISION, crear_backend)
 
 # Mismas columnas reales del layout "acta_completa" (segunda vuelta: c1, c2 +
 # no-candidato + suma_total). Se completan todas para no depender de defaults.
@@ -80,7 +81,8 @@ def test_verificador_recupera_valor_que_el_principal_no_pudo_leer():
 
 
 def _sin_env_de_ocr(monkeypatch):
-    for clave in ("OCR_BACKEND", "GEMINI_API_KEY", "OPENAI_API_KEY", "OCR_VERIFICAR_BAJA_CONFIANZA"):
+    for clave in ("OCR_BACKEND", "GEMINI_API_KEY", "OPENAI_API_KEY",
+                 "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OCR_VERIFICAR_BAJA_CONFIANZA"):
         monkeypatch.delenv(clave, raising=False)
     # cargar_env() solo hace setdefault desde .env; con las claves ya seteadas
     # explícitamente abajo, no las pisa.
@@ -119,3 +121,35 @@ def test_crear_backend_parametro_explicito_gana_a_la_variable_de_entorno(monkeyp
     monkeypatch.setenv("OCR_VERIFICAR_BAJA_CONFIANZA", "1")
     back = crear_backend(verificar_baja_confianza=False)
     assert isinstance(back, BackendGemini)
+
+
+def test_crear_backend_usa_openrouter_si_es_la_unica_clave_disponible(monkeypatch):
+    _sin_env_de_ocr(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    back = crear_backend()
+    assert isinstance(back, BackendOpenRouter)
+    assert back.modelo == "google/gemini-3.5-flash"  # default
+
+
+def test_crear_backend_openrouter_modelo_configurable(monkeypatch):
+    _sin_env_de_ocr(monkeypatch)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    monkeypatch.setenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4")
+    back = crear_backend()
+    assert back.modelo == "anthropic/claude-sonnet-4"
+
+
+def test_crear_backend_gemini_gana_a_openrouter_si_hay_ambas_claves(monkeypatch):
+    _sin_env_de_ocr(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "y")
+    back = crear_backend()
+    assert isinstance(back, BackendGemini)  # precedencia sin cambios: gemini > gpt > openrouter
+
+
+def test_crear_backend_openrouter_explicito_gana_aunque_haya_gemini(monkeypatch):
+    _sin_env_de_ocr(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "y")
+    back = crear_backend(preferido="openrouter")
+    assert isinstance(back, BackendOpenRouter)

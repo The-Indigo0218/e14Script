@@ -43,11 +43,25 @@ def probar_gpt(api_key: str, modelo: str) -> tuple[bool, str]:
         return False, str(e)
 
 
+def probar_openrouter(api_key: str, modelo: str) -> tuple[bool, str]:
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    cuerpo = {"model": modelo, "messages": [{"role": "user", "content": "Responde solo: OK"}]}
+    try:
+        r = requests.post(url, headers={"Authorization": f"Bearer {api_key}", "X-Title": "Auditoria E14"},
+                          json=cuerpo, timeout=30)
+        if r.status_code != 200:
+            return False, f"HTTP {r.status_code}: {r.text[:200]}"
+        return True, r.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)
+
+
 def main():
     cargar_env()
     backend = (os.environ.get("OCR_BACKEND") or "").lower()
     gem = os.environ.get("GEMINI_API_KEY")
     gpt = os.environ.get("OPENAI_API_KEY")
+    openrouter = os.environ.get("OPENROUTER_API_KEY")
 
     if (backend == "gemini" or (not backend and gem)) and gem:
         modelo = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
@@ -57,8 +71,13 @@ def main():
         modelo = os.environ.get("OPENAI_MODEL", "gpt-4o")
         print(f"Probando GPT ({modelo})...")
         ok, msg = probar_gpt(gpt, modelo)
+    elif (backend == "openrouter" or (not backend and openrouter)) and openrouter:
+        modelo = os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash")
+        print(f"Probando OpenRouter ({modelo})...")
+        ok, msg = probar_openrouter(openrouter, modelo)
     else:
-        print("❌ No hay clave configurada en .env (GEMINI_API_KEY o OPENAI_API_KEY).")
+        print("❌ No hay clave configurada en .env "
+              "(GEMINI_API_KEY, OPENAI_API_KEY u OPENROUTER_API_KEY).")
         print("   Pega tu clave en .env y vuelve a correr este script.")
         sys.exit(1)
 
