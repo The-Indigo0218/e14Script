@@ -156,6 +156,41 @@ normalizan (sin ceros a la izquierda) para casar siempre con el catálogo.
   se archiva en `actas_historial` (con número de versión y fecha). `actas` mantiene la
   versión vigente, así el comparador no cambia. La verificación manual se conserva.
 
+### 3.8. Recorte de la región de votación antes del OCR (opt-in)
+
+Como la Capa 1 deja el folio en **coordenadas fijas de la plantilla**, la tabla de
+votación cae siempre en el mismo rectángulo. Se puede **recortar** a esa región
+(candidatos + blanco/nulos/no marcados + total) antes de mandar la imagen al OCR.
+
+- **Por qué:** menos píxeles = **menos tokens** y lectura más enfocada; de paso se
+  descartan cabecera, nivelación y la zona de **constancias/firmas con cédulas** de
+  jurados (que no debe salir del flujo). En pruebas, el recorte leyó igual de bien
+  (6/6 casillas) gastando ~⅓ menos de tokens que la hoja completa.
+- **Decisión: opt-in, apagado por defecto** (`--recortar-votos` / `OCR_RECORTAR_VOTOS=1`).
+  El ROI por defecto es de la plantilla 2026; activarlo a ciegas con un ROI mal
+  calibrado podría cortar un dígito. Solo se recorta con **alineación confiable**;
+  si la alineación es pobre, se manda la hoja completa (no se arriesga el dato).
+- **Calibración:** `probar_recorte.py` compara variantes de recorte contra la verdad
+  conocida (tokens vs precisión). El ROI vive en `e14/alineacion.py` por layout.
+
+### 3.9. Varias copias del E-14 en una sola imagen → segmentación + consolidación
+
+Un testigo suele subir en **una sola imagen** los 2-3 ejemplares (claveros,
+delegados, transmisión) juntos —lado a lado o apilados—. Alinear la imagen completa
+contra UNA plantilla falla con varias actas en el cuadro (la homografía no casa todas).
+
+- **Decisión:** si el folio completo no alinea, **segmentar** la imagen en columnas/
+  filas (esquemas ordenados por la proporción) y alinear **cada pedazo** por separado;
+  la propia alineación (inliers) decide cuáles son actas reales (`e14/segmentacion.py`).
+  No hay que indicar cuántas copias hay: se detectan solas.
+- **Consolidación:** todas las copias traen los **mismos votos**, así que con leer una
+  basta. Se aplica la **mejor leída** (mayor confianza). Si se leen 2+ y **discrepan**
+  en algún voto, la mesa va a **revisión** (ver §4) — copias del mismo acta que no
+  coinciden es una señal de auditoría fuerte (error de transcripción o manipulación).
+- **Costo asumido:** leer todas las copias gasta más OCR que leer una, pero el cruce
+  entre copias **garantiza transparencia**; se prioriza integridad sobre ahorro (igual
+  que en §3.1). El caso de una sola acta sigue siendo una sola alineación (atajo rápido).
+
 ---
 
 ## 4. Cómo se garantiza la confiabilidad (doble validación)
@@ -165,8 +200,11 @@ normalizan (sin ceros a la izquierda) para casar siempre con el catálogo.
 2. **Cruce entre fuentes:** la lectura del E-14 oficial vs la del E-14 del testigo.
    - Coinciden + suma cuadra → **alta confianza**.
    - Difieren → **revisión humana** (y posible alerta de irregularidad).
+3. **Cruce entre copias (cuando el testigo sube varias):** si en la misma evidencia
+   se leen 2+ ejemplares (claveros/delegados/transmisión), sus votos deben coincidir
+   entre sí. Si discrepan → **revisión** (ver §3.9).
 
-Estas dos validaciones, sumadas al umbral de confianza del OCR, son las que hacen el
+Estas validaciones, sumadas al umbral de confianza del OCR, son las que hacen el
 sistema **auditable** pese a que ningún OCR de manuscrito sea perfecto.
 
 ---
@@ -174,12 +212,16 @@ sistema **auditable** pese a que ningún OCR de manuscrito sea perfecto.
 ## 5. Capas del sistema
 
 ```
-PDF E-14 (oficial y testigo)
+PDF/foto E-14 (oficial y testigo)
+   │
+   ├─ Segmentación  varias copias en una imagen → 1 acta c/u  [HECHO]
+   │            → cada ejemplar se alinea/lee por separado
    │
    ├─ Capa 1  Alineación por plantilla (OpenCV/SIFT)         [HECHO]
    │            → imagen derecha + casillas en posición conocida
+   │            → (opcional) recorte a la región de votación
    │
-   ├─ Capa 2  OCR multimodal (Gemini)                        [POR CONECTAR]
+   ├─ Capa 2  OCR multimodal (Gemini)                        [HECHO]
    │            → {candidato: voto, confianza} por casilla
    │
    ├─ Capa 4  Validación (suma cuadra) + confianza<80% → revisar

@@ -41,20 +41,23 @@ auditoria-e14/                 (este repositorio)
     mesa.py                    nomenclatura NuMunicipio_zona_puesto_mesa, código canónico, emparejamiento
     catalogo.py                Excel "Mesa a Mesa" → universo de mesas por municipio
     cobertura.py               cruza catálogo vs archivos presentes (estados del lote)
-    alineacion.py              CAPA 1: SIFT + homografía
-    preprocess.py              recorte/zoom/CLAHE antes del OCR
+    alineacion.py              CAPA 1: SIFT + homografía (+ ROI de votación por layout)
+    segmentacion.py            varias copias en una imagen → 1 acta por copia
+    preprocess.py              recorte negro/región de votación, zoom, CLAHE antes del OCR
     ocr.py                     CAPA 2: Gemini / GPT / manual
     evidencia.py               copias visibles en la foto
-    lectura.py                 orquestador PDF → ActaE14
+    lectura.py                 orquestador PDF/foto → ActaE14 (segmenta + consolida copias)
     comparador.py              CAPA 3: comparación
 
   auditar.py                   ORQUESTADOR: audita un lote (municipio) de punta a punta
+  procesar_testigos.py         día de elección: OCR de testigos nuevos (idempotente, --vigilar)
+  probar_recorte.py            banco de pruebas del recorte de la región de votación
   cobertura.py                 SCRIPT: tablero de cobertura / detalle de un lote (sin OCR)
   leer_testigos.py             SCRIPT: testigo (CSV o PDF) → tabla
   leer_registraduria.py        SCRIPT: oficial → capa1 → OCR → tabla
   comparar.py                  SCRIPT: cruza fuentes → Excel
   probar_api.py                verificar clave antes de OCR masivo
-  tests/                       pruebas pytest (catálogo, cobertura, orquestador, almacén, mesa)
+  tests/                       pruebas pytest (catálogo, cobertura, orquestador, almacén, mesa, recorte, segmentación)
 ```
 
 **Unidad de trabajo: el LOTE = un municipio.** El Excel de la Registraduría es el
@@ -97,13 +100,15 @@ Cada fila de la tabla: `codigo_mesa`, `fuente` (testigo|registraduria), votos
 | Nomenclatura + emparejamiento (`mesa.py`) | ✅ | `1_21_01_13_*.pdf` → canónico `1_21_1_13` |
 | Catálogo desde Excel (`catalogo.py`) | ✅ | Universo por municipio, `MUN→nombre` (Registraduría, no DANE) |
 | Cobertura por lote (`cobertura.py`) | ✅ | listas / solo_testigo / faltan_ambas / fuera_de_catalogo |
-| Orquestador de lote (`auditar.py`) | ✅ | `--municipio`, `--plan`, `--limite`, `--reauditar` |
-| Tests (`tests/`) | ✅ | pytest, 30 pruebas (fixture sintético, sin API) |
-| Capa 1 alineación (`alineacion.py`) | ✅ | Probada mesa 21_01_13; QA por inliers |
-| Preprocesamiento (`preprocess.py`) | ✅ | Recorte negro + zoom para OCR |
+| Orquestador de lote (`auditar.py`) | ✅ | `--municipio`, `--plan`, `--limite`, `--reauditar`, `--recortar-votos` |
+| Pase de testigos día de elección (`procesar_testigos.py`) | ✅ | Idempotente (ignora ya cargados), `--vigilar` en bucle |
+| Tests (`tests/`) | ✅ | pytest, 120+ pruebas (fixture sintético, sin API) |
+| Capa 1 alineación (`alineacion.py`) | ✅ | Probada mesa 21_01_13; QA por inliers; ROI de votación por layout |
+| Segmentación multi-copia (`segmentacion.py`) | ✅ | Varias copias en una imagen → 1 acta c/u (validado 1/2/3 copias) |
+| Preprocesamiento (`preprocess.py`) | ✅ | Recorte negro / región de votación + zoom para OCR |
 | Capa 2 OCR (`ocr.py`) | ✅ | Gemini/GPT conectados; informe API en notas |
 | Trazabilidad copias (`evidencia.py`) | ✅ | Foto testigo + título PDF oficial |
-| Lectura unificada (`lectura.py`) | ✅ | PDF/imagen; `--solo-pagina-1` |
+| Lectura unificada (`lectura.py`) | ✅ | PDF/foto; segmenta varias copias y consolida (cruce); `--solo-pagina-1`, `--recortar-votos` |
 | Comparador (`comparador.py` + `comparar.py`) | ✅ | Excel + hoja Trazabilidad E-14 |
 | Script 1 testigos (`leer_testigos.py`) | ✅ | CSV y PDF/OCR |
 | Script 2 registraduría (`leer_registraduria.py`) | ✅ | Pipeline completo con Gemini |
@@ -125,9 +130,14 @@ Cada fila de la tabla: `codigo_mesa`, `fuente` (testigo|registraduria), votos
 ### Paso A — ~~Conectar el OCR (capa 2) con Gemini~~ ✅ HECHO
 Ver `e14/ocr.py` (`BackendGemini`), `probar_api.py` y guía de reproducción en `README.md`.
 
-### Paso B — Recorte por casilla (opcional, para máxima precisión)
-- Usando las coordenadas fijas de la plantilla (capa 1 ya alinea a ellas), recortar
-  cada casilla y, si hace falta, enviarlas en lote o validar dígito por dígito.
+### Paso B — ~~Recorte de la región de votación~~ ✅ HECHO (recorte por casilla, opcional)
+- ✅ Recorte de la **región de votación** antes del OCR (`--recortar-votos`,
+  `e14/preprocess.py` + ROI en `e14/alineacion.py`): ahorra tokens, descarta cédulas.
+  Banco de pruebas `probar_recorte.py`.
+- ✅ **Varias copias en una imagen** → segmentación + consolidación con cruce entre
+  copias (`e14/segmentacion.py`, `lectura.py`).
+- (Opcional, pendiente) Recorte **por casilla individual** para validar dígito por
+  dígito en mesas marginales — sólo si la precisión lo amerita.
 
 ### Paso C — Cola de revisión manual
 - Listar todo lo marcado `necesita_revision` con el recorte de la casilla al lado del
@@ -159,7 +169,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env    # pegar GEMINI_API_KEY
 python probar_api.py
-pytest -q               # 30 pruebas, no necesitan API
+pytest -q               # 120+ pruebas, no necesitan API
 ```
 
 Flujo por lote (datos reales, recomendado):
@@ -186,6 +196,7 @@ Una mesa/casilla va a **revisión humana** si se cumple cualquiera:
 - Confianza del OCR **< 80%**.
 - La **suma** de votos no cuadra con el total declarado.
 - El E-14 **oficial y el del testigo no coinciden**.
+- Se leyeron **varias copias** (claveros/delegados/transmisión) y **discrepan** entre sí.
 - La **alineación** (capa 1) tuvo pocos inliers (imagen dudosa).
 
 ---
