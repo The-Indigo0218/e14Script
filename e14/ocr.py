@@ -30,11 +30,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from e14.modelo import CANDIDATOS, columnas_voto
+from e14.modelo import CANDIDATOS, columnas_voto, UMBRAL_REVISION
 from e14.alineacion import columnas_de_layout
 
-# Confianza mínima por casilla; por debajo → revisión humana.
-UMBRAL_REVISION = 0.80
+# UMBRAL_REVISION se define en e14.modelo y se re-exporta acá por compatibilidad
+# (varios módulos lo importan como `from e14.ocr import UMBRAL_REVISION`).
 
 
 # ─── Red: forzar IPv4 ─────────────────────────────────────────────────────────

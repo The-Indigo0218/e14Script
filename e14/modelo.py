@@ -30,6 +30,11 @@ CATEGORIAS_NO_CANDIDATO = ["blanco", "nulos", "no_marcados"]
 FUENTE_TESTIGO = "testigo"
 FUENTE_REGISTRADURIA = "registraduria"
 
+# Confianza mínima por casilla; por debajo → revisión humana. Vive acá (módulo
+# liviano, sin dependencias pesadas) para que consumidores como el tablero
+# público no tengan que importar e14.ocr (que arrastra cv2/opencv y la API).
+UMBRAL_REVISION = 0.80
+
 # ─── TIPO DE EJEMPLAR DEL E-14 (de qué COPIA se tomó el dato) ──────────────────
 # El E-14 se imprime en varias copias con la MISMA información pero distinto
 # destinatario. Saber de cuál salió cada dato es clave para auditar: si la copia

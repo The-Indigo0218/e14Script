@@ -28,8 +28,7 @@ from pathlib import Path
 
 from e14.almacen import Almacen
 from e14.comparador import comparar
-from e14.modelo import FUENTE_REGISTRADURIA, FUENTE_TESTIGO
-from e14.ocr import UMBRAL_REVISION
+from e14.modelo import FUENTE_REGISTRADURIA, FUENTE_TESTIGO, UMBRAL_REVISION
 from e14.reporte_publico import construir_reporte
 
 PLANTILLA_HTML = Path(__file__).parent / "plantillas" / "tablero_publico.html"

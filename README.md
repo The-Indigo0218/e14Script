@@ -397,6 +397,11 @@ python dashboard_publico.py --demo --salida sitio
 Genera datos sintéticos realistas y muestra un aviso bien visible de "DATOS DE
 DEMOSTRACIÓN" en la página, para no confundirlos con resultados reales.
 
+> **Dependencias:** el tablero público es agregación pura — no usa OpenCV ni la API.
+> Corre con Python estándar (cualquier `python3`), sin el entorno de OCR. La única
+> dependencia opcional es `openpyxl`, y solo si pasás `--catalogo`. Ejecutalo desde la
+> raíz del repo para que el paquete `e14` sea importable.
+
 ---
 
 ## Estado del proyecto
