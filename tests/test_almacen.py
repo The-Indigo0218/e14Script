@@ -17,6 +17,19 @@ def test_primera_lectura_no_crea_historial(tmp_path):
     alm.cerrar()
 
 
+def test_civ_numerico_se_guarda_como_texto_no_como_entero(tmp_path):
+    """Bug real: civ puramente numérico (ej. '4098007') caía en columna INTEGER
+    en bases nuevas y SQLite lo coercionaba a int, perdiendo que es texto."""
+    alm = Almacen(tmp_path / "t.db")
+    acta = ActaE14(codigo_mesa="1_21_1_13", fuente=FUENTE_TESTIGO,
+                  numero_kit="40,980", civ="4098007")
+    alm.guardar(acta)
+    fila = alm.leer_por_fuente(FUENTE_TESTIGO)["1_21_1_13"]
+    assert fila["civ"] == "4098007"
+    assert isinstance(fila["civ"], str)
+    alm.cerrar()
+
+
 def test_reauditar_archiva_version_anterior(tmp_path):
     alm = Almacen(tmp_path / "t.db")
     alm.guardar(_acta(10, 5))   # v actual: 10/5

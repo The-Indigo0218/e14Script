@@ -140,6 +140,12 @@ class ActaE14:
     puesto: str | None = None
     mesa: str | None = None
 
+    # ── Identificadores impresos en el formulario (trazabilidad, NO son votos) ──
+    numero_kit: str | None = None    # número de KIT electoral
+    civ: str | None = None           # código CIV (impreso muy chico: confianza propia)
+    confianza_kit: float | None = None
+    confianza_civ: float | None = None
+
     # ── Votos por candidato (segunda vuelta: solo 2) ──
     c1: int | None = None
     c2: int | None = None

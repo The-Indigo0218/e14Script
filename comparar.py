@@ -123,6 +123,10 @@ def generar_excel(comparaciones, salida):
         "Total declarado\nen el acta\n(Registr.)",
         "¿Cuadra?\nsuma=total\n(Registr.)",
         "% Discrepancia\ntotal",
+        "KIT\n(Testigo)", "Confianza KIT\n(Testigo)",
+        "KIT\n(Registr.)", "Confianza KIT\n(Registr.)",
+        "CIV\n(Testigo)", "Confianza CIV\n(Testigo)",
+        "CIV\n(Registr.)", "Confianza CIV\n(Registr.)",
     ]
     for j, h in enumerate(encabezados, 1):
         _h(ws2.cell(1, j), h)
@@ -266,6 +270,33 @@ def generar_excel(comparaciones, salida):
         if comp.porcentaje_discrepancia_total and abs(comp.porcentaje_discrepancia_total) >= 0.01:
             c_pct.fill = PatternFill("solid", start_color=ROJO)
             c_pct.font = Font(bold=True, name="Arial", size=9, color="9C0006")
+        j += 1
+
+        # ── KIT / CIV: identificadores del formulario, no son votos. Se resaltan
+        # en rojo el valor si las dos fuentes lo leyeron y NO coincide (podría ser
+        # evidencia de mesas distintas o un error de lectura), y la confianza si
+        # quedó por debajo del umbral (el CIV en particular se imprime muy chico).
+        for off, (vt, vr, ct, cr, coincide) in enumerate((
+            (comp.kit_testigo, comp.kit_registraduria,
+             comp.confianza_kit_testigo, comp.confianza_kit_registraduria, comp.kit_coincide),
+            (comp.civ_testigo, comp.civ_registraduria,
+             comp.confianza_civ_testigo, comp.confianza_civ_registraduria, comp.civ_coincide),
+        )):
+            base = j + off * 4
+            c_t = ws2.cell(fila, base, vt or "—")
+            c_r = ws2.cell(fila, base + 2, vr or "—")
+            for c in (c_t, c_r):
+                c.alignment = Alignment(horizontal="center")
+                c.font = Font(name="Arial", size=9)
+                c.border = _borde()
+                if coincide is False:
+                    c.fill = PatternFill("solid", start_color=ROJO)
+                    c.font = Font(bold=True, name="Arial", size=9, color="9C0006")
+            for off2, conf in enumerate((ct, cr)):
+                c_conf = _celda_num(fila, base + 1 + off2 * 2, conf, fmt="0%")
+                if conf is not None and conf < UMBRAL_REVISION:
+                    c_conf.fill = PatternFill("solid", start_color=ROJO)
+                    c_conf.font = Font(bold=True, name="Arial", size=9, color="9C0006")
 
         fila += 1
     ws2.freeze_panes = "G2"

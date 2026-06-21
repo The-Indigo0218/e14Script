@@ -77,6 +77,27 @@ class ComparacionMesa:
     verificado_registraduria: bool = False
     nota_verificacion_testigo: str | None = None
     nota_verificacion_registraduria: str | None = None
+    kit_testigo: str | None = None
+    kit_registraduria: str | None = None
+    civ_testigo: str | None = None
+    civ_registraduria: str | None = None
+    confianza_kit_testigo: float | None = None
+    confianza_kit_registraduria: float | None = None
+    confianza_civ_testigo: float | None = None
+    confianza_civ_registraduria: float | None = None
+
+    @property
+    def kit_coincide(self) -> bool | None:
+        """None si falta alguno de los dos; True/False si hay ambos para comparar."""
+        if not self.kit_testigo or not self.kit_registraduria:
+            return None
+        return self.kit_testigo.strip().lower() == self.kit_registraduria.strip().lower()
+
+    @property
+    def civ_coincide(self) -> bool | None:
+        if not self.civ_testigo or not self.civ_registraduria:
+            return None
+        return self.civ_testigo.strip().lower() == self.civ_registraduria.strip().lower()
 
     @property
     def trazabilidad_testigo(self) -> str:
@@ -270,6 +291,14 @@ def comparar_mesa(codigo: str, fila_t: dict | None, fila_r: dict | None) -> Comp
         verificado_registraduria=bool((fila_r or {}).get("verificado_manualmente")),
         nota_verificacion_testigo=(fila_t or {}).get("notas_verificacion"),
         nota_verificacion_registraduria=(fila_r or {}).get("notas_verificacion"),
+        kit_testigo=_valor(fila_t, "numero_kit"),
+        kit_registraduria=_valor(fila_r, "numero_kit"),
+        civ_testigo=_valor(fila_t, "civ"),
+        civ_registraduria=_valor(fila_r, "civ"),
+        confianza_kit_testigo=(fila_t or {}).get("confianza_kit"),
+        confianza_kit_registraduria=(fila_r or {}).get("confianza_kit"),
+        confianza_civ_testigo=(fila_t or {}).get("confianza_civ"),
+        confianza_civ_registraduria=(fila_r or {}).get("confianza_civ"),
     )
 
 

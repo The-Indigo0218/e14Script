@@ -19,6 +19,7 @@ from e14.modelo import ActaE14, columnas_voto
 _COLUMNAS_META = [
     "codigo_mesa", "fuente", "tipo_acta", "copias_en_evidencia",
     "departamento", "municipio", "zona", "puesto", "mesa",
+    "numero_kit", "civ", "confianza_kit", "confianza_civ",
 ]
 _COLUMNAS_TOTALES = ["suma_total", "total_votos_urna", "total_votantes_e11"]
 _COLUMNAS_AUDIT = ["archivo_origen", "confianza", "necesita_revision", "notas"]
@@ -49,6 +50,14 @@ class Almacen:
             self.con.execute("ALTER TABLE actas ADD COLUMN verificado_manualmente INTEGER")
         if "notas_verificacion" not in existentes:
             self.con.execute("ALTER TABLE actas ADD COLUMN notas_verificacion TEXT")
+        if "numero_kit" not in existentes:
+            self.con.execute("ALTER TABLE actas ADD COLUMN numero_kit TEXT")
+        if "civ" not in existentes:
+            self.con.execute("ALTER TABLE actas ADD COLUMN civ TEXT")
+        if "confianza_kit" not in existentes:
+            self.con.execute("ALTER TABLE actas ADD COLUMN confianza_kit REAL")
+        if "confianza_civ" not in existentes:
+            self.con.execute("ALTER TABLE actas ADD COLUMN confianza_civ REAL")
         self.con.commit()
 
     def _crear_tabla(self) -> None:
@@ -56,9 +65,10 @@ class Almacen:
         for c in _TODAS:
             if c in ("codigo_mesa", "fuente", "tipo_acta", "copias_en_evidencia",
                      "departamento", "municipio", "zona", "puesto", "mesa",
-                     "archivo_origen", "notas", "notas_verificacion"):
+                     "archivo_origen", "notas", "notas_verificacion",
+                     "numero_kit", "civ"):
                 tipo = "TEXT"
-            elif c == "confianza":
+            elif c in ("confianza", "confianza_kit", "confianza_civ"):
                 tipo = "REAL"
             elif c == "necesita_revision":
                 tipo = "INTEGER"

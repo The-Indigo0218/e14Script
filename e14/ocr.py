@@ -59,6 +59,10 @@ class LecturaOCR:
     necesita_revision: bool = True
     notas: str | None = None
     detalle_api: str | None = None   # informe legible de lo que respondió la API
+    numero_kit: str | None = None    # número de KIT impreso en el formulario (no es voto)
+    civ: str | None = None           # código CIV impreso en el formulario (no es voto)
+    confianza_kit: float = 0.0
+    confianza_civ: float = 0.0
 
 
 # ─── Utilidades comunes ───────────────────────────────────────────────────────
@@ -117,9 +121,18 @@ def _prompt(cols: list[str]) -> str:
         "son ceros vacíos, NO son dígitos (ej. '..3' = 3, '.77' = 77, '130' = 130).\n"
         "- Si una casilla está vacía, el valor es 0 solo si no hay ningún dígito.\n"
         "- No inventes. Si no puedes leerlo con seguridad, devuelve null y confianza baja.\n"
+        "- Además, buscá en el encabezado del formulario (fuera de las casillas de "
+        "votos) un número de \"KIT\" y un código \"CIV\" — son identificadores "
+        "impresos en el E-14, NO son votos. Si los ves, transcribilos tal cual están "
+        "escritos (pueden tener letras y números) y dame tu confianza 0..1 de esa "
+        "lectura igual que con los votos (el CIV suele estar impreso muy chico, así "
+        "que si no se ve nítido, confianza baja). Si no aparecen, valor null y "
+        "confianza 0.\n"
         "- Devuelve SOLO un JSON con esta forma exacta:\n"
         '{ "campos": { "<clave>": { "valor": <entero|null>, '
-        '"confianza": <numero 0..1> }, ... } }'
+        '"confianza": <numero 0..1> }, ... }, '
+        '"kit": { "valor": <texto|null>, "confianza": <numero 0..1> }, '
+        '"civ": { "valor": <texto|null>, "confianza": <numero 0..1> } }'
     )
 
 
@@ -149,6 +162,26 @@ def _informe_api(campos: dict, cols: list[str]) -> str:
     return " — ".join(trozos) if trozos else "API: todos los campos OK"
 
 
+def _texto_o_none(valor) -> str | None:
+    """Coerciona un campo JSON de texto libre (kit/civ) a str limpio o None."""
+    if valor is None:
+        return None
+    texto = str(valor).strip()
+    return texto or None
+
+
+def _campo_texto_confianza(data: dict, clave: str) -> tuple[str | None, float]:
+    """Lee un campo {valor, confianza} de texto libre (kit/civ) del JSON de la API."""
+    celda = data.get(clave)
+    if not isinstance(celda, dict):
+        return _texto_o_none(celda), 0.0  # tolerancia si la API devuelve el texto suelto
+    try:
+        conf = float(celda.get("confianza", 0.0))
+    except (TypeError, ValueError):
+        conf = 0.0
+    return _texto_o_none(celda.get("valor")), conf
+
+
 def _parsear_respuesta(texto: str, cols: list[str]) -> LecturaOCR:
     valores = {c: None for c in cols}
     confianzas = {c: 0.0 for c in cols}
@@ -165,6 +198,8 @@ def _parsear_respuesta(texto: str, cols: list[str]) -> LecturaOCR:
             except (TypeError, ValueError):
                 confianzas[c] = 0.0
         detalle = _informe_api(campos, cols)
+        numero_kit, confianza_kit = _campo_texto_confianza(data, "kit")
+        civ, confianza_civ = _campo_texto_confianza(data, "civ")
     except (json.JSONDecodeError, ValueError, AttributeError):
         return LecturaOCR(valores, confianzas, 0.0, True,
                           "Respuesta OCR no parseable.", texto[:300])
@@ -172,7 +207,18 @@ def _parsear_respuesta(texto: str, cols: list[str]) -> LecturaOCR:
     presentes = [confianzas[c] for c in cols if valores[c] is not None]
     glob = min(presentes) if presentes else 0.0
     revisar = (not presentes) or any(cf < UMBRAL_REVISION for cf in presentes)
-    return LecturaOCR(valores, confianzas, glob, revisar, detalle_api=detalle)
+    notas_id = []
+    if numero_kit is not None and confianza_kit < UMBRAL_REVISION:
+        revisar = True
+        notas_id.append(f"KIT={numero_kit} (conf baja {confianza_kit:.0%})")
+    if civ is not None and confianza_civ < UMBRAL_REVISION:
+        revisar = True
+        notas_id.append(f"CIV={civ} (conf baja {confianza_civ:.0%})")
+    if notas_id:
+        detalle = f"{detalle} — REVISAR identificadores: " + ", ".join(notas_id)
+    return LecturaOCR(valores, confianzas, glob, revisar, detalle_api=detalle,
+                      numero_kit=numero_kit, civ=civ,
+                      confianza_kit=confianza_kit, confianza_civ=confianza_civ)
 
 
 # ─── Backend manual (sin costo) ───────────────────────────────────────────────

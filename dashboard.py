@@ -28,6 +28,7 @@ from e14.almacen import Almacen
 from e14.catalogo import cargar_catalogo
 from e14.cobertura import cobertura_lote
 from e14.comparador import comparar, resumen
+from e14.mesa import municipio_zona_puesto_mesa_desde_codigo
 from e14.modelo import FUENTE_REGISTRADURIA, FUENTE_TESTIGO
 from e14.ocr import UMBRAL_REVISION
 
@@ -70,6 +71,36 @@ def _cobertura_por_municipio() -> list[dict]:
             "pct": cob.pct_listas(),
         })
     return filas
+
+
+def _comparacion_por_puesto(testigo: dict, registraduria: dict) -> list[dict]:
+    """Igual que el resumen global, pero agrupado por municipio·zona·puesto."""
+    comparaciones = comparar(testigo, registraduria)
+    grupos: dict[tuple, dict] = {}
+    for comp in comparaciones:
+        meta = municipio_zona_puesto_mesa_desde_codigo(comp.codigo_mesa)
+        if not meta:
+            continue
+        clave = (meta["municipio"], meta["zona"], meta["puesto"])
+        g = grupos.setdefault(clave, {
+            "municipio": meta["municipio"], "zona": meta["zona"], "puesto": meta["puesto"],
+            "total": 0, "coincide": 0, "discrepancia": 0, "confianza_baja": 0,
+        })
+        g["total"] += 1
+        if comp.estado == "COINCIDE":
+            g["coincide"] += 1
+        elif comp.estado == "DISCREPANCIA":
+            g["discrepancia"] += 1
+        for conf in (comp.confianza_testigo, comp.confianza_registraduria):
+            if conf is not None and conf < UMBRAL_REVISION:
+                g["confianza_baja"] += 1
+
+    def _clave_orden(g: dict):
+        def _n(v):
+            return int(v) if str(v).isdigit() else v
+        return (g["municipio"], _n(g["zona"]), _n(g["puesto"]))
+
+    return sorted(grupos.values(), key=_clave_orden)
 
 
 def _panel_sheets() -> list[dict]:
@@ -123,6 +154,17 @@ button:hover { background: #eee; }
 Falta fuente: {{ comp.FALTA_FUENTE }} ·
 Confianza baja: <span class="warn">{{ confianza_baja }}</span></p>
 
+<h2>Comparación por puesto</h2>
+{% if por_puesto %}
+<table><tr><th>Municipio</th><th>Zona</th><th>Puesto</th><th>Total</th>
+<th>Coinciden</th><th>Discrepancia</th><th>Confianza baja</th></tr>
+{% for g in por_puesto %}
+<tr><td>{{ g.municipio }}</td><td>{{ g.zona }}</td><td>{{ g.puesto }}</td><td>{{ g.total }}</td>
+<td class="ok">{{ g.coincide }}</td><td class="bad">{{ g.discrepancia }}</td>
+<td class="warn">{{ g.confianza_baja }}</td></tr>
+{% endfor %}</table>
+{% else %}<p class="vacio">Sin mesas cargadas todavía en la base local.</p>{% endif %}
+
 <h2>Panel maestro (Sheets)</h2>
 {% if panel %}
 <table><tr><th>Persona</th><th>Fecha</th><th>Municipio</th><th>Zona</th><th>Puesto</th>
@@ -170,11 +212,12 @@ def inicio():
         if fila.get("confianza") is not None and float(fila["confianza"]) < UMBRAL_REVISION
     )
     revision = _filas_para_revisar(alm)
+    por_puesto = _comparacion_por_puesto(testigo, registraduria)
     alm.cerrar()
     return render_template_string(
         _PLANTILLA, cobertura=_cobertura_por_municipio(), comp=comp,
         confianza_baja=confianza_baja, panel=_panel_sheets(), revision=revision,
-        db=_CFG["db"],
+        por_puesto=por_puesto, db=_CFG["db"],
     )
 
 
