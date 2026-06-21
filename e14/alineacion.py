@@ -65,6 +65,25 @@ def columnas_de_layout(layout_id: str) -> list[str]:
     return list(_COLUMNAS_POR_LAYOUT.get(layout_id, []))
 
 
+# Región de interés (ROI) de la tabla de votación por layout, en FRACCIONES
+# (x0, y0, x1, y1) de la imagen ya alineada a la plantilla. Recortar a esto
+# antes del OCR descarta cabecera, nivelación y constancias/firmas (cédulas de
+# jurados) → menos tokens y lectura más enfocada, sin perder ninguna casilla de
+# voto (candidatos + blanco/nulos/no_marcados + suma_total).
+#
+# Calibrado contra la PLANTILLA oficial 2ª vuelta 2026. PROVISIONAL: re-verificar
+# con actas reales 2026 antes de activar el recorte por defecto (un formulario de
+# otro año tiene proporciones distintas; ver probar_recorte.py para calibrar).
+_ROI_VOTOS_POR_LAYOUT = {
+    LAYOUT_ACTA_COMPLETA: (0.0, 0.36, 1.0, 0.885),
+}
+
+
+def roi_votos_de_layout(layout_id: str) -> tuple[float, float, float, float] | None:
+    """ROI (fracciones) de la tabla de votación de un layout, o None si no hay."""
+    return _ROI_VOTOS_POR_LAYOUT.get(layout_id)
+
+
 # ─── Render de PDF a escala de grises ─────────────────────────────────────────
 def render_pdf_gris(pdf_path: str | Path, dpi: int = 150) -> list[np.ndarray]:
     doc = fitz.open(str(pdf_path))

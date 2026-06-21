@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import socket
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,26 @@ from e14.alineacion import columnas_de_layout
 
 # Confianza mínima por casilla; por debajo → revisión humana.
 UMBRAL_REVISION = 0.80
+
+
+# ─── Red: forzar IPv4 ─────────────────────────────────────────────────────────
+def _forzar_ipv4() -> None:
+    """En entornos con IPv6 roto cada llamada HTTP espera ~30s al timeout de IPv6
+    antes de caer a IPv4 (mismo problema que e14/drive.py). Forzamos getaddrinfo
+    a devolver solo IPv4 para que las llamadas OCR sean rápidas. Idempotente:
+    no re-envuelve si ya se aplicó (ej. drive.py también lo hace)."""
+    if getattr(socket, "_ipv4_forzado", False):
+        return
+    original = socket.getaddrinfo
+
+    def _solo_ipv4(*args, **kwargs):
+        return [r for r in original(*args, **kwargs) if r[0] == socket.AF_INET]
+
+    socket.getaddrinfo = _solo_ipv4
+    socket._ipv4_forzado = True
+
+
+_forzar_ipv4()
 
 
 # ─── Config: leer claves desde entorno o archivo .env ─────────────────────────

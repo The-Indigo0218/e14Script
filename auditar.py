@@ -156,7 +156,8 @@ def _leer_y_guardar(lector: Lector, alm: Almacen, codigo: str, fuente: str,
 
 
 def _lector_real(tipo_testigo: str | None, layouts: list[str] | None,
-                 verificar_baja_confianza: bool = False) -> Lector:
+                 verificar_baja_confianza: bool = False,
+                 recortar_votos: bool | None = None) -> Lector:
     """Construye el lector con el pipeline real (Capa 1 + OCR). Importa perezoso."""
     from e14.alineacion import Alineador
     from e14.ocr import backend_por_defecto
@@ -177,7 +178,8 @@ def _lector_real(tipo_testigo: str | None, layouts: list[str] | None,
     def lector(ruta: Path, fuente: str, codigo: str) -> ActaE14:
         tipo = tipo_testigo if fuente == FUENTE_TESTIGO else TIPO_DELEGADOS
         return leer_acta_pdf(str(ruta), alineador, ocr, fuente, codigo,
-                             tipo_acta=tipo, layouts=layouts)
+                             tipo_acta=tipo, layouts=layouts,
+                             recortar_votos=recortar_votos)
 
     return lector
 
@@ -215,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--incluir-parciales", action="store_true", help="Incluir mesas con una sola fuente")
     p.add_argument("--tipo-testigo", help="Copia del E-14 del testigo (claveros|delegados|transmision)")
     p.add_argument("--solo-pagina-1", action="store_true", help="Solo la página de candidatos/totales")
+    p.add_argument("--recortar-votos", action="store_true",
+                   help="Recortar a la región de votación antes del OCR (ahorra tokens; "
+                        "solo con alineación confiable). También por OCR_RECORTAR_VOTOS=1")
     p.add_argument("--plan", action="store_true", help="Mostrar qué se procesaría y salir (sin OCR)")
     args = p.parse_args(argv)
 
@@ -250,7 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     layouts = ["acta_completa"] if args.solo_pagina_1 else None
-    lector = _lector_real(args.tipo_testigo, layouts, args.verificar_baja_confianza)
+    lector = _lector_real(args.tipo_testigo, layouts, args.verificar_baja_confianza,
+                          recortar_votos=True if args.recortar_votos else None)
 
     alm = Almacen(args.db)
     res = procesar_lote(catalogo, args.municipio, args.datos, alm, lector,

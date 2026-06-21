@@ -34,6 +34,32 @@ def recortar_margenes_negros(imagen_gris: np.ndarray, umbral: int = 25,
     return recorte
 
 
+def recortar_region(imagen_gris: np.ndarray,
+                    roi: tuple[float, float, float, float]) -> np.ndarray:
+    """
+    Recorta a la región de interés (x0, y0, x1, y1) dada en FRACCIONES [0,1] del
+    ancho/alto. Pensado para usarse SOBRE la imagen ya alineada a la plantilla:
+    como la alineación deja el folio en coordenadas fijas de la plantilla, un
+    mismo `roi` cae siempre sobre la misma zona (ej. la tabla de votación), así
+    se descarta todo lo demás (fotos, cabecera, constancias/firmas con cédulas)
+    antes del OCR → menos tokens y lectura más enfocada.
+
+    El `roi` debe calibrarse contra la plantilla que se usó para alinear (un
+    formulario de otro año puede tener proporciones distintas).
+    """
+    if imagen_gris is None or imagen_gris.size == 0:
+        return imagen_gris
+    h, w = imagen_gris.shape[:2]
+    x0, y0, x1, y1 = roi
+    a = int(round(max(0.0, x0) * w))
+    b = int(round(min(1.0, x1) * w))
+    c = int(round(max(0.0, y0) * h))
+    d = int(round(min(1.0, y1) * h))
+    if b <= a or d <= c:
+        return imagen_gris
+    return imagen_gris[c:d, a:b]
+
+
 def ampliar_para_ocr(imagen_gris: np.ndarray, escala: float = 1.5) -> np.ndarray:
     """Escala la imagen para que dígitos pequeños (..3, .77) se lean mejor."""
     if imagen_gris is None or imagen_gris.size == 0 or escala <= 1.0:
