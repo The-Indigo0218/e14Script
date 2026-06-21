@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from e14.ocr import (BackendGemini, BackendOpenRouter, BackendVerificado, LecturaOCR,
-                    UMBRAL_REVISION, crear_backend)
+from e14.ocr import (BackendConFallback, BackendGemini, BackendOpenRouter, BackendVerificado,
+                    LecturaOCR, UMBRAL_REVISION, crear_backend)
 
 # Mismas columnas reales del layout "acta_completa" (segunda vuelta: c1, c2 +
 # no-candidato + suma_total). Se completan todas para no depender de defaults.
@@ -80,6 +80,38 @@ def test_verificador_recupera_valor_que_el_principal_no_pudo_leer():
     assert "recuperado por verificador" in resultado.notas
 
 
+def test_fallback_no_consulta_respaldo_si_el_principal_no_tuvo_429():
+    principal = _BackendFalso("gemini", _lectura(c1_valor=10))
+    respaldo = _BackendFalso("openrouter", _lectura(c1_valor=999))
+    back = BackendConFallback(principal, respaldo)
+    resultado = back.reconocer_votos(None, "acta_completa")
+    assert resultado.valores["c1"] == 10  # no tocó nada: no hubo 429
+
+
+def test_fallback_usa_respaldo_si_el_principal_se_quedo_sin_cuota():
+    sin_cuota = LecturaOCR(
+        valores={c: None for c in COLS}, confianzas={c: 0.0 for c in COLS},
+        necesita_revision=True, notas="Error Gemini: 429 Too Many Requests (cuota/rate limit...)",
+    )
+    principal = _BackendFalso("gemini", sin_cuota)
+    respaldo = _BackendFalso("openrouter", _lectura(c1_valor=42))
+    back = BackendConFallback(principal, respaldo)
+    resultado = back.reconocer_votos(None, "acta_completa")
+    assert resultado.valores["c1"] == 42
+    assert "agotada (429)" in resultado.notas
+    assert "openrouter" in resultado.notas
+
+
+def test_crear_backend_usa_fallback_si_hay_gemini_y_openrouter_juntos(monkeypatch):
+    _sin_env_de_ocr(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "y")
+    back = crear_backend()
+    assert isinstance(back, BackendConFallback)
+    assert isinstance(back.principal, BackendGemini)
+    assert isinstance(back.respaldo, BackendOpenRouter)
+
+
 def _sin_env_de_ocr(monkeypatch):
     for clave in ("OCR_BACKEND", "GEMINI_API_KEY", "OPENAI_API_KEY",
                  "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OCR_VERIFICAR_BAJA_CONFIANZA"):
@@ -139,12 +171,15 @@ def test_crear_backend_openrouter_modelo_configurable(monkeypatch):
     assert back.modelo == "anthropic/claude-sonnet-4"
 
 
-def test_crear_backend_gemini_gana_a_openrouter_si_hay_ambas_claves(monkeypatch):
+def test_crear_backend_con_gemini_y_openrouter_juntos_envuelve_en_fallback(monkeypatch):
     _sin_env_de_ocr(monkeypatch)
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     monkeypatch.setenv("OPENROUTER_API_KEY", "y")
     back = crear_backend()
-    assert isinstance(back, BackendGemini)  # precedencia sin cambios: gemini > gpt > openrouter
+    # Ya no es BackendGemini "pelado": Gemini sigue siendo el principal (tier
+    # gratis primero), pero envuelto para poder caer a OpenRouter sin cuota.
+    assert isinstance(back, BackendConFallback)
+    assert isinstance(back.principal, BackendGemini)
 
 
 def test_crear_backend_openrouter_explicito_gana_aunque_haya_gemini(monkeypatch):

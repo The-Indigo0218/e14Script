@@ -370,6 +370,37 @@ class BackendOpenRouter:
         return _parsear_respuesta(texto, cols)
 
 
+# ─── Respaldo: cambia de backend SOLO si el principal se quedó sin cuota ──────
+class BackendConFallback:
+    """
+    Envuelve un backend PRINCIPAL (pensado para el tier gratis, ej. Gemini) con
+    uno de RESPALDO de saldo prepago (ej. OpenRouter) que SOLO se usa si el
+    principal falló por límite de cuota / rate-limit (HTTP 429) — para no gastar
+    saldo pagado mientras el tier gratis todavía sirve.
+
+    A diferencia de BackendVerificado (que compara dos lecturas), acá la
+    segunda lectura simplemente REEMPLAZA a la primera cuando la primera vino
+    vacía por la cuota agotada — no hay nada que comparar, el principal no
+    devolvió nada usable.
+    """
+
+    def __init__(self, principal, respaldo):
+        self.principal = principal
+        self.respaldo = respaldo
+        self.nombre = f"{principal.nombre}+respaldo_{respaldo.nombre}"
+
+    def reconocer_votos(self, imagen_alineada, layout_id: str) -> LecturaOCR:
+        lectura = self.principal.reconocer_votos(imagen_alineada, layout_id)
+        sin_cuota = "429" in (lectura.notas or "") or "429" in (lectura.detalle_api or "")
+        if not sin_cuota:
+            return lectura
+
+        lectura2 = self.respaldo.reconocer_votos(imagen_alineada, layout_id)
+        nota = f"Cuota de {self.principal.nombre} agotada (429) -> se usó {self.respaldo.nombre} de respaldo."
+        lectura2.notas = f"{lectura2.notas} | {nota}" if lectura2.notas else nota
+        return lectura2
+
+
 # ─── Verificador: segunda lectura con OTRO modelo, solo para casillas dudosas ──
 class BackendVerificado:
     """
@@ -441,6 +472,11 @@ def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool |
         sí se puede cargar saldo en OpenRouter. Modelo por OPENROUTER_MODEL (su
         "slug" en https://openrouter.ai/models, ej. "google/gemini-3.5-flash" —
         verificá el nombre exacto ahí, default abajo es una suposición).
+      • Si hay GEMINI_API_KEY *y* OPENROUTER_API_KEY a la vez, se usa Gemini
+        (tier gratis) como principal con OpenRouter (saldo pagado) de RESPALDO
+        automático — solo se gasta saldo de OpenRouter cuando Gemini devuelve
+        429 (cuota agotada), nunca antes. Para ahorrar: no paga por nada que
+        el tier gratis ya hubiera podido leer.
       • Doble verificación con GPT (cuando el principal es Gemini): SOLO si se
         pide explícitamente, nunca por defecto — `verificar_baja_confianza=True`
         (ej. desde --verificar-baja-confianza en auditar.py) o, si no se pasa
@@ -464,6 +500,11 @@ def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool |
     if elegido == "gemini" or (not elegido and gem):
         if gem:
             principal = BackendGemini(gem, os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"))
+            if openrouter:
+                respaldo = BackendOpenRouter(
+                    openrouter, os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash")
+                )
+                principal = BackendConFallback(principal, respaldo)
             if verificar and gpt:
                 verificador = BackendGPT(gpt, os.environ.get("OPENAI_MODEL", "gpt-4o"))
                 return BackendVerificado(principal, verificador)
