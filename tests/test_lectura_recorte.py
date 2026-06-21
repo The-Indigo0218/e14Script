@@ -24,17 +24,17 @@ def test_recortar_votos_activo_entorno_apagado_por_defecto(monkeypatch):
 
 
 class _AlineadorFalso:
-    """Devuelve una imagen alineada fija (sin tocar disco ni SIFT)."""
+    """Alinea el folio completo de forma confiable (sin tocar disco ni SIFT)."""
     dpi = 150
 
     def __init__(self, alineada):
         self._alineada = alineada
 
-    def alinear_paginas(self, paginas, solo_layouts=None):
-        return [ResultadoAlineacion(
-            indice_pagina=1, layout_id=LAYOUT_ACTA_COMPLETA,
+    def alinear_pagina(self, pagina, indice=1, solo_layouts=None):
+        return ResultadoAlineacion(
+            indice_pagina=indice, layout_id=LAYOUT_ACTA_COMPLETA,
             inliers=200, confiable=True, imagen_alineada=self._alineada,
-        )]
+        )
 
 
 class _OCRFalso:

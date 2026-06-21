@@ -26,6 +26,7 @@ from e14.modelo import (
 from e14.alineacion import (
     Alineador, columnas_de_layout, render_pdf_gris, roi_votos_de_layout,
 )
+from e14.segmentacion import alinear_actas_en_paginas
 from e14.evidencia import detectar_copias_en_evidencia, validar_lectura_vs_evidencia
 from e14.mesa import codigo_mesa_desde_archivo, municipio_zona_puesto_mesa_desde_codigo, etiqueta_mesa
 from e14.preprocess import mejorar_para_ocr, recortar_region
@@ -99,10 +100,14 @@ def leer_acta_pdf(pdf_path: str, alineador: Alineador, ocr, fuente: str,
         acta.notas = " | ".join(notas)
         return acta
 
-    resultados = alineador.alinear_paginas(paginas, solo_layouts=layouts)
-    confianzas: list[float] = []
+    # Una imagen puede traer VARIAS copias (claveros/delegados/transmisión) juntas;
+    # la segmentación devuelve un acta por copia detectada (ver e14/segmentacion.py).
+    resultados = alinear_actas_en_paginas(alineador, paginas, solo_layouts=layouts)
 
-    for r in resultados:
+    # (resultado, lectura, votos_dict) de cada copia que SÍ extrajo votos.
+    lecturas_ok: list[tuple] = []
+
+    for idx, r in enumerate(resultados, 1):
         if layouts and r.layout_id not in layouts:
             continue
         cols_layout = columnas_de_layout(r.layout_id) if r.layout_id else []
@@ -110,9 +115,9 @@ def leer_acta_pdf(pdf_path: str, alineador: Alineador, ocr, fuente: str,
             continue
         if not r.confiable:
             acta.necesita_revision = True
-            notas.append(f"pág {r.indice_pagina}: alineación pobre ({r.inliers} inliers)")
+            notas.append(f"copia {idx} (pág {r.indice_pagina}): alineación pobre ({r.inliers} inliers)")
             continue
-        notas.append(f"pág {r.indice_pagina}: alineación OK ({r.inliers} inliers, layout={r.layout_id})")
+        notas.append(f"copia {idx} (pág {r.indice_pagina}): alineación OK ({r.inliers} inliers)")
         # Recortar a la región de votación (opt-in) ahorra tokens y enfoca el OCR.
         # Solo se recorta con alineación confiable: si el folio quedó mal alineado,
         # el ROI caería sobre la zona equivocada → mejor mandar la hoja completa.
@@ -120,7 +125,7 @@ def leer_acta_pdf(pdf_path: str, alineador: Alineador, ocr, fuente: str,
         roi = roi_votos_de_layout(r.layout_id) if recortar else None
         if roi is not None:
             region = recortar_region(r.imagen_alineada, roi)
-            notas.append(f"pág {r.indice_pagina}: recorte región votación activado")
+            notas.append(f"copia {idx}: recorte región votación activado")
         img_ocr = mejorar_para_ocr(region, escala=1.5)
         lectura = ocr.reconocer_votos(img_ocr, r.layout_id)
         # Si la API dejó casillas en null (dígitos con puntos '..3'), reintenta con más zoom.
@@ -140,28 +145,51 @@ def leer_acta_pdf(pdf_path: str, alineador: Alineador, ocr, fuente: str,
                 lectura.confianzas[c] < 0.80 for c in cols_layout if lectura.valores[c] is not None
             )
             if any(lectura2.valores.get(c) is not None for c in faltan):
-                notas.append(f"pág {r.indice_pagina}: re-OCR zoom recuperó {len(faltan)} casilla(s)")
-        for col in cols_layout:
-            if lectura.valores.get(col) is not None:
-                setattr(acta, col, lectura.valores[col])
+                notas.append(f"copia {idx}: re-OCR zoom recuperó {len(faltan)} casilla(s)")
+        # KIT/CIV: toma el primero disponible entre las copias.
         if lectura.numero_kit and not acta.numero_kit:
             acta.numero_kit = lectura.numero_kit
             acta.confianza_kit = lectura.confianza_kit
         if lectura.civ and not acta.civ:
             acta.civ = lectura.civ
             acta.confianza_civ = lectura.confianza_civ
-        # Solo promediar confianza de lecturas que sí extrajeron algo (evita diluir con páginas basura).
-        if any(lectura.valores.get(c) is not None for c in cols_layout):
-            confianzas.append(lectura.confianza_global)
+        if lectura.detalle_api:
+            notas.append(f"OCR copia {idx}: {lectura.detalle_api}")
+        elif lectura.notas:
+            notas.append(f"copia {idx}: {lectura.notas}")
+        votos = {c: lectura.valores.get(c) for c in cols_layout}
+        if any(v is not None for v in votos.values()):
+            lecturas_ok.append((r, lectura, votos))
         if lectura.necesita_revision:
             acta.necesita_revision = True
-        if lectura.detalle_api:
-            notas.append(f"OCR pág {r.indice_pagina}: {lectura.detalle_api}")
-        elif lectura.notas:
-            notas.append(f"pág {r.indice_pagina}: {lectura.notas}")
 
-    if confianzas:
-        acta.confianza = sum(confianzas) / len(confianzas)
+    # ── Consolidar: elegir la copia MEJOR leída y cruzar entre copias ──
+    # Todas las copias del E-14 traen los mismos votos, así que con leer una bien
+    # basta. Si se leyeron 2+ y DISCREPAN, se marca para revisión (señal fuerte).
+    if lecturas_ok:
+        def _calidad(item):
+            res, lec, votos = item
+            no_nulas = sum(1 for v in votos.values() if v is not None)
+            return (lec.confianza_global, no_nulas, res.inliers)
+
+        _r, principal, votos_p = max(lecturas_ok, key=_calidad)
+        for col, val in votos_p.items():
+            if val is not None:
+                setattr(acta, col, val)
+        acta.confianza = principal.confianza_global
+
+        if len(lecturas_ok) >= 2:
+            discrepan = [
+                c for c in votos_p
+                if len({v[c] for _x, _y, v in lecturas_ok if v.get(c) is not None}) > 1
+            ]
+            if discrepan:
+                acta.necesita_revision = True
+                notas.append(f"⚠ {len(lecturas_ok)} copias leídas y DISCREPAN en "
+                             f"{', '.join(discrepan)} — revisar a mano")
+            else:
+                notas.append(f"✓ {len(lecturas_ok)} copias leídas y coinciden en los votos")
+
     if notas:
         acta.notas = " | ".join(notas)
 
