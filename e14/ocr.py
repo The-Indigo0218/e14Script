@@ -107,8 +107,27 @@ def _etiqueta(col: str) -> str:
             "suma_total": "TOTAL VOTOS DE LA MESA"}.get(col, col)
 
 
-def _prompt(cols: list[str]) -> str:
+def _prompt(cols: list[str], incluir_kit_civ: bool = False) -> str:
+    """
+    `incluir_kit_civ=False` por defecto: la pasada de votos no pide KIT/CIV
+    (menos tokens, llamada más rápida/barata) — eso es un pase APARTE
+    (ver `_prompt_kit_civ`/`leer_identificadores.py`), para no competir por
+    cuota con la lectura de votos en el momento urgente.
+    """
     lineas = "\n".join(f'  - "{c}" = {_etiqueta(c)}' for c in cols)
+    extra_kit_civ = (
+        "- Además, buscá en el encabezado del formulario (fuera de las casillas de "
+        "votos) un número de \"KIT\" y un código \"CIV\" — son identificadores "
+        "impresos en el E-14, NO son votos. Si los ves, transcribilos tal cual están "
+        "escritos (pueden tener letras y números) y dame tu confianza 0..1 de esa "
+        "lectura igual que con los votos (el CIV suele estar impreso muy chico, así "
+        "que si no se ve nítido, confianza baja). Si no aparecen, valor null y "
+        "confianza 0.\n"
+    ) if incluir_kit_civ else ""
+    esquema_kit_civ = (
+        ', "kit": { "valor": <texto|null>, "confianza": <numero 0..1> }, '
+        '"civ": { "valor": <texto|null>, "confianza": <numero 0..1> }'
+    ) if incluir_kit_civ else ""
     return (
         "Eres un lector de actas electorales colombianas E-14 (segunda vuelta "
         "presidencial 2026, solo 2 candidatos). En la imagen, cada candidato/categoría "
@@ -121,17 +140,26 @@ def _prompt(cols: list[str]) -> str:
         "son ceros vacíos, NO son dígitos (ej. '..3' = 3, '.77' = 77, '130' = 130).\n"
         "- Si una casilla está vacía, el valor es 0 solo si no hay ningún dígito.\n"
         "- No inventes. Si no puedes leerlo con seguridad, devuelve null y confianza baja.\n"
-        "- Además, buscá en el encabezado del formulario (fuera de las casillas de "
-        "votos) un número de \"KIT\" y un código \"CIV\" — son identificadores "
-        "impresos en el E-14, NO son votos. Si los ves, transcribilos tal cual están "
-        "escritos (pueden tener letras y números) y dame tu confianza 0..1 de esa "
-        "lectura igual que con los votos (el CIV suele estar impreso muy chico, así "
-        "que si no se ve nítido, confianza baja). Si no aparecen, valor null y "
-        "confianza 0.\n"
+        f"{extra_kit_civ}"
         "- Devuelve SOLO un JSON con esta forma exacta:\n"
         '{ "campos": { "<clave>": { "valor": <entero|null>, '
-        '"confianza": <numero 0..1> }, ... }, '
-        '"kit": { "valor": <texto|null>, "confianza": <numero 0..1> }, '
+        '"confianza": <numero 0..1> }, ... }'
+        f"{esquema_kit_civ} }}"
+    )
+
+
+def _prompt_kit_civ() -> str:
+    """Prompt dedicado SOLO a KIT/CIV — pase aparte, sin volver a pedir votos."""
+    return (
+        "Eres un lector de actas electorales colombianas E-14. En el encabezado del "
+        "formulario (fuera de las casillas de votos) buscá un número de \"KIT\" y un "
+        "código \"CIV\" — son identificadores impresos en el E-14, NO son votos.\n\n"
+        "Reglas:\n"
+        "- Transcribilos tal cual están escritos (pueden tener letras y números).\n"
+        "- No inventes. Si no los ves con seguridad, valor null y confianza baja.\n"
+        "- El CIV suele estar impreso muy chico: si no se ve nítido, confianza baja.\n"
+        "- Devuelve SOLO un JSON con esta forma exacta:\n"
+        '{ "kit": { "valor": <texto|null>, "confianza": <numero 0..1> }, '
         '"civ": { "valor": <texto|null>, "confianza": <numero 0..1> } }'
     )
 
@@ -221,6 +249,30 @@ def _parsear_respuesta(texto: str, cols: list[str]) -> LecturaOCR:
                       confianza_kit=confianza_kit, confianza_civ=confianza_civ)
 
 
+def _parsear_identificadores(texto: str) -> LecturaOCR:
+    """Respuesta del pase APARTE de solo KIT/CIV (sin columnas de voto)."""
+    try:
+        ini, fin = texto.find("{"), texto.rfind("}")
+        data = json.loads(texto[ini:fin + 1])
+        numero_kit, confianza_kit = _campo_texto_confianza(data, "kit")
+        civ, confianza_civ = _campo_texto_confianza(data, "civ")
+    except (json.JSONDecodeError, ValueError, AttributeError):
+        return LecturaOCR({}, {}, 0.0, True, "Respuesta de identificadores no parseable.", texto[:300])
+
+    revisar = (
+        (numero_kit is None and civ is None)
+        or (numero_kit is not None and confianza_kit < UMBRAL_REVISION)
+        or (civ is not None and confianza_civ < UMBRAL_REVISION)
+    )
+    detalle = (
+        f"KIT={numero_kit or '—'} (conf {confianza_kit:.0%}), "
+        f"CIV={civ or '—'} (conf {confianza_civ:.0%})"
+    )
+    return LecturaOCR({}, {}, min(confianza_kit, confianza_civ), revisar, detalle_api=detalle,
+                      numero_kit=numero_kit, civ=civ,
+                      confianza_kit=confianza_kit, confianza_civ=confianza_civ)
+
+
 # ─── Backend manual (sin costo) ───────────────────────────────────────────────
 class BackendManual:
     nombre = "manual"
@@ -234,6 +286,10 @@ class BackendManual:
             necesita_revision=True,
             notas="Backend manual: sin OCR (define una API key para activar la lectura).",
         )
+
+    def leer_identificadores(self, imagen_alineada) -> LecturaOCR:
+        return LecturaOCR({}, {}, 0.0, True,
+                          "Backend manual: sin OCR (define una API key para activar la lectura).")
 
 
 # ─── Backend Gemini (REST) — RECOMENDADO ──────────────────────────────────────
@@ -268,6 +324,29 @@ class BackendGemini:
             return LecturaOCR({c: None for c in cols}, {c: 0.0 for c in cols},
                               0.0, True, _mensaje_error_api(e))
         lectura = _parsear_respuesta(texto, cols)
+        if lectura.detalle_api:
+            lectura.notas = lectura.detalle_api
+        return lectura
+
+    def leer_identificadores(self, imagen_alineada) -> LecturaOCR:
+        """Pase APARTE: solo KIT/CIV, sin volver a pedir los votos."""
+        b64 = _imagen_a_base64_png(imagen_alineada)
+        cuerpo = {
+            "contents": [{
+                "parts": [
+                    {"text": _prompt_kit_civ()},
+                    {"inline_data": {"mime_type": "image/png", "data": b64}},
+                ]
+            }],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0},
+        }
+        try:
+            r = _post_gemini_con_reintento(
+                self.URL.format(modelo=self.modelo), self.api_key, cuerpo)
+            texto = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:  # noqa: BLE001
+            return LecturaOCR({}, {}, 0.0, True, _mensaje_error_api(e))
+        lectura = _parsear_identificadores(texto)
         if lectura.detalle_api:
             lectura.notas = lectura.detalle_api
         return lectura
@@ -312,6 +391,34 @@ class BackendGPT:
             return LecturaOCR({c: None for c in cols}, {c: 0.0 for c in cols},
                               0.0, True, f"Error GPT: {e}")
         return _parsear_respuesta(texto, cols)
+
+    def leer_identificadores(self, imagen_alineada) -> LecturaOCR:
+        """Pase APARTE: solo KIT/CIV, sin volver a pedir los votos."""
+        import requests
+        b64 = _imagen_a_base64_png(imagen_alineada)
+        cuerpo = {
+            "model": self.modelo,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _prompt_kit_civ()},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                ],
+            }],
+        }
+        try:
+            r = requests.post(
+                self.URL, headers={"Authorization": f"Bearer {self.api_key}"},
+                json=cuerpo, timeout=60,
+            )
+            r.raise_for_status()
+            texto = r.json()["choices"][0]["message"]["content"]
+        except Exception as e:  # noqa: BLE001
+            return LecturaOCR({}, {}, 0.0, True, f"Error GPT: {e}")
+        return _parsear_identificadores(texto)
 
 
 # ─── Backend OpenRouter (REST, OpenAI-compatible) ─────────────────────────────
@@ -369,6 +476,35 @@ class BackendOpenRouter:
                               0.0, True, f"Error OpenRouter: {e}")
         return _parsear_respuesta(texto, cols)
 
+    def leer_identificadores(self, imagen_alineada) -> LecturaOCR:
+        """Pase APARTE: solo KIT/CIV, sin volver a pedir los votos."""
+        import requests
+        b64 = _imagen_a_base64_png(imagen_alineada)
+        cuerpo = {
+            "model": self.modelo,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": _prompt_kit_civ()},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                ],
+            }],
+        }
+        try:
+            r = requests.post(
+                self.URL,
+                headers={"Authorization": f"Bearer {self.api_key}", "X-Title": "Auditoria E14"},
+                json=cuerpo, timeout=60,
+            )
+            r.raise_for_status()
+            texto = r.json()["choices"][0]["message"]["content"]
+        except Exception as e:  # noqa: BLE001
+            return LecturaOCR({}, {}, 0.0, True, f"Error OpenRouter: {e}")
+        return _parsear_identificadores(texto)
+
 
 # ─── Respaldo: cambia de backend SOLO si el principal se quedó sin cuota ──────
 class BackendConFallback:
@@ -396,6 +532,16 @@ class BackendConFallback:
             return lectura
 
         lectura2 = self.respaldo.reconocer_votos(imagen_alineada, layout_id)
+        nota = f"Cuota de {self.principal.nombre} agotada (429) -> se usó {self.respaldo.nombre} de respaldo."
+        lectura2.notas = f"{lectura2.notas} | {nota}" if lectura2.notas else nota
+        return lectura2
+
+    def leer_identificadores(self, imagen_alineada) -> LecturaOCR:
+        lectura = self.principal.leer_identificadores(imagen_alineada)
+        sin_cuota = "429" in (lectura.notas or "") or "429" in (lectura.detalle_api or "")
+        if not sin_cuota:
+            return lectura
+        lectura2 = self.respaldo.leer_identificadores(imagen_alineada)
         nota = f"Cuota de {self.principal.nombre} agotada (429) -> se usó {self.respaldo.nombre} de respaldo."
         lectura2.notas = f"{lectura2.notas} | {nota}" if lectura2.notas else nota
         return lectura2
@@ -457,6 +603,10 @@ class BackendVerificado:
             prefijo = f"Verificador ({self.verificador.nombre}): " + " | ".join(notas_verif)
             lectura.notas = f"{lectura.notas} | {prefijo}" if lectura.notas else prefijo
         return lectura
+
+    def leer_identificadores(self, imagen_alineada) -> LecturaOCR:
+        """KIT/CIV no pasa por la doble verificación (eso es solo para votos)."""
+        return self.principal.leer_identificadores(imagen_alineada)
 
 
 # ─── Fábrica: elige el backend según el entorno ───────────────────────────────

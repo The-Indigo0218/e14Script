@@ -40,6 +40,46 @@ def test_civ_numerico_se_guarda_como_texto_no_como_entero(tmp_path):
     alm.cerrar()
 
 
+def test_actualizar_identificadores_no_toca_los_votos_ni_crea_historial(tmp_path):
+    alm = Almacen(tmp_path / "t.db")
+    alm.guardar(ActaE14(codigo_mesa="1_21_1_13", fuente=FUENTE_TESTIGO, c1=89, c2=90))
+    ok = alm.actualizar_identificadores(
+        "1_21_1_13", FUENTE_TESTIGO,
+        numero_kit="40,980", confianza_kit=0.95, civ="04098007", confianza_civ=0.7,
+        necesita_revision=True, nota="REVISAR identificadores: CIV conf baja",
+    )
+    assert ok is True
+    fila = alm.leer_por_fuente(FUENTE_TESTIGO)["1_21_1_13"]
+    assert (fila["c1"], fila["c2"]) == (89, 90)  # los votos no se tocaron
+    assert fila["numero_kit"] == "40,980"
+    assert fila["civ"] == "04098007"
+    assert fila["necesita_revision"] == 1
+    assert alm.num_versiones("1_21_1_13", FUENTE_TESTIGO) == 0  # no archivó nada
+    alm.cerrar()
+
+
+def test_actualizar_identificadores_combina_nota_sin_pisar_la_anterior(tmp_path):
+    alm = Almacen(tmp_path / "t.db")
+    alm.guardar(ActaE14(codigo_mesa="1_21_1_13", fuente=FUENTE_TESTIGO, c1=89, c2=90,
+                        notas="pág 1: alineación OK"))
+    alm.actualizar_identificadores("1_21_1_13", FUENTE_TESTIGO,
+                                  numero_kit="K-1", confianza_kit=0.9, civ=None, confianza_civ=0.0,
+                                  nota="REVISAR identificadores: CIV no visible")
+    fila = alm.leer_por_fuente(FUENTE_TESTIGO)["1_21_1_13"]
+    assert "alineación OK" in fila["notas"]
+    assert "REVISAR identificadores" in fila["notas"]
+    alm.cerrar()
+
+
+def test_actualizar_identificadores_devuelve_false_si_la_mesa_no_existe(tmp_path):
+    alm = Almacen(tmp_path / "t.db")
+    ok = alm.actualizar_identificadores("no_existe", FUENTE_TESTIGO,
+                                        numero_kit="K-1", confianza_kit=0.9,
+                                        civ="C-1", confianza_civ=0.9)
+    assert ok is False
+    alm.cerrar()
+
+
 def test_archiva_sin_romper_en_db_vieja_sin_columnas_kit_civ(tmp_path):
     """Bug real: actas_historial no se migraba como actas, así que re-auditar una
     mesa de una base creada ANTES de agregar numero_kit/civ rompía al archivar."""

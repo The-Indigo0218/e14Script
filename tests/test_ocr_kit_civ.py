@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from e14.ocr import UMBRAL_REVISION, _parsear_respuesta
+from e14.ocr import UMBRAL_REVISION, _parsear_identificadores, _parsear_respuesta, _prompt
 
 COLS = ["c1", "c2"]
 
@@ -51,3 +51,39 @@ def test_tolera_kit_civ_como_texto_suelto_sin_confianza():
     lectura = _parsear_respuesta(_respuesta(kit="K-04521", civ="CIV-9981"), COLS)
     assert lectura.numero_kit == "K-04521"
     assert lectura.confianza_kit == 0.0
+
+
+def test_prompt_de_votos_no_pide_kit_civ_por_defecto():
+    """Divide y vencerás: la pasada de votos ya NO pide KIT/CIV (pase aparte)."""
+    texto = _prompt(COLS)
+    assert "KIT" not in texto
+    assert "CIV" not in texto
+
+
+def test_prompt_de_votos_pide_kit_civ_si_se_pide_explicitamente():
+    texto = _prompt(COLS, incluir_kit_civ=True)
+    assert "KIT" in texto and "CIV" in texto
+
+
+def test_parsear_identificadores_extrae_kit_y_civ_con_confianza():
+    texto = json.dumps({
+        "kit": {"valor": "K-04521", "confianza": 0.9},
+        "civ": {"valor": "CIV-9981", "confianza": 0.4},
+    })
+    lectura = _parsear_identificadores(texto)
+    assert lectura.numero_kit == "K-04521" and lectura.confianza_kit == 0.9
+    assert lectura.civ == "CIV-9981" and lectura.confianza_civ == 0.4
+    assert lectura.necesita_revision is True  # CIV con confianza baja
+    assert lectura.valores == {} and lectura.confianzas == {}  # no toca votos
+
+
+def test_parsear_identificadores_sin_nada_legible_marca_revision():
+    texto = json.dumps({"kit": None, "civ": None})
+    lectura = _parsear_identificadores(texto)
+    assert lectura.necesita_revision is True
+
+
+def test_parsear_identificadores_respuesta_no_parseable():
+    lectura = _parsear_identificadores("esto no es json")
+    assert lectura.necesita_revision is True
+    assert "no parseable" in lectura.notas

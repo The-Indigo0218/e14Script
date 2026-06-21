@@ -156,6 +156,43 @@ class Almacen:
         self.con.commit()
         return cur.rowcount > 0
 
+    def actualizar_identificadores(self, codigo_mesa: str, fuente: str, *,
+                                   numero_kit: str | None, confianza_kit: float | None,
+                                   civ: str | None, confianza_civ: float | None,
+                                   necesita_revision: bool | None = None,
+                                   nota: str | None = None) -> bool:
+        """
+        Actualiza SOLO kit/civ (sin tocar votos ni archivar historial) — para la
+        pasada separada de identificadores (`leer_identificadores.py`), que no
+        vuelve a leer los votos y por eso no necesita versionar nada.
+
+        Si `necesita_revision`/`nota` se dan, se combinan con lo que ya había
+        (no se pisa lo que dejó la pasada de votos). Devuelve False si
+        (codigo_mesa, fuente) no existe en la base.
+        """
+        fila = self.con.execute(
+            "SELECT necesita_revision, notas FROM actas WHERE codigo_mesa = ? AND fuente = ?",
+            (codigo_mesa, fuente),
+        ).fetchone()
+        if fila is None:
+            return False
+        nueva_revision = (
+            (1 if necesita_revision else 0) if necesita_revision is not None
+            else fila["necesita_revision"]
+        )
+        nuevas_notas = (
+            f"{fila['notas']} | {nota}" if (fila["notas"] and nota)
+            else (nota or fila["notas"])
+        )
+        self.con.execute(
+            "UPDATE actas SET numero_kit = ?, confianza_kit = ?, civ = ?, confianza_civ = ?, "
+            "necesita_revision = ?, notas = ? WHERE codigo_mesa = ? AND fuente = ?",
+            (numero_kit, confianza_kit, civ, confianza_civ, nueva_revision, nuevas_notas,
+             codigo_mesa, fuente),
+        )
+        self.con.commit()
+        return True
+
     def leer_por_fuente(self, fuente: str) -> dict[str, dict]:
         """{codigo_mesa: fila_dict} para una fuente."""
         cur = self.con.execute("SELECT * FROM actas WHERE fuente = ?", (fuente,))

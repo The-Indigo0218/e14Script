@@ -24,3 +24,6 @@ datos/**/*.png
 
 # Sistema
 .DS_Store
+
+# Contexto de continuidad entre sesiones de chat (local, no se sube)
+context.md

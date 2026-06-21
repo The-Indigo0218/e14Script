@@ -269,6 +269,31 @@ python auditar.py "ruta/al/…xlsx" --municipio 1 --solo-pagina-1 --limite 50 --
 - Internamente reutiliza el pipeline de los scripts de abajo (mismo `leer_acta_pdf`
   + `comparar`). Esos scripts siguen sirviendo para procesar un archivo suelto.
 
+### 5.1. Divide y vencerás: votos primero, KIT/CIV aparte
+
+La lectura de votos **ya no pide KIT/CIV** por defecto (menos tokens, llamada más
+rápida/barata) — KIT/CIV es identificador de trazabilidad, no un voto, y se puede
+completar después como trabajo de fondo sin competir por cuota con la lectura
+urgente de votos.
+
+```bash
+# a) Puesto completo, interactivo: pide la nomenclatura (municipio zona puesto)
+#    y corre la lectura de VOTOS de todas sus mesas (sin KIT/CIV).
+python correr_puesto.py
+#   Nomenclatura del puesto (municipio zona puesto, ej. '1 1 1'): 1 1 3
+#   Ruta del Excel 'Mesa a Mesa' [catalogo/mesa_a_mesa.xlsx]: <Enter o tu ruta>
+
+# b) Pase aparte (después, sin apuro): completa KIT/CIV de esas mismas mesas.
+python leer_identificadores.py actas.db --municipio 1 --zona 1 --puesto 3
+```
+
+- `correr_puesto.py` es un atajo interactivo sobre `auditar.py --municipio M --zona
+  Z --puesto P --solo-pagina-1`; cambiá `CATALOGO_DEFECTO` en el script si tu Excel
+  siempre vive en la misma ruta.
+- `leer_identificadores.py` re-alinea cada archivo (Capa 1, sin costo de API) y
+  hace una llamada liviana solo por KIT/CIV — no vuelve a tocar los votos ni
+  archiva historial. Acepta `--fuente testigo|registraduria` y `--paralelo N`.
+
 ### 6. Flujo manual por script: primero oficial, luego testigo
 
 **Orden sugerido** (1 llamada API por script, sin bucles):
