@@ -21,8 +21,9 @@ Si no pasás --hoja, la sección del panel de aprobación simplemente no aparece
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
-from flask import Flask, redirect, render_template_string, request, url_for
+from flask import Flask, Response, redirect, render_template_string, request, url_for
 
 from e14.almacen import Almacen
 from e14.catalogo import cargar_catalogo
@@ -32,8 +33,41 @@ from e14.mesa import municipio_zona_puesto_mesa_desde_codigo
 from e14.modelo import FUENTE_REGISTRADURIA, FUENTE_TESTIGO
 from e14.ocr import UMBRAL_REVISION
 
+PLANTILLA = "plantillas/muestra-formulario-e14-segunda-vuelta.pdf"
+
 app = Flask(__name__)
 _CFG: dict = {}
+_ALINEADOR = None  # se crea una sola vez (el índice SIFT de la plantilla es caro)
+
+
+def _alineador():
+    global _ALINEADOR
+    if _ALINEADOR is None:
+        from e14.alineacion import Alineador
+        _ALINEADOR = Alineador(PLANTILLA)
+    return _ALINEADOR
+
+
+def _imagen_alineada_png(archivo_origen: str) -> bytes | None:
+    """
+    Re-alinea (Capa 1, sin costo de API) la página 1 del archivo original y la
+    devuelve como PNG — la misma imagen "limpia" que el OCR usó para leer, en vez
+    de la foto/PDF crudo completo (con firmas, fotos de candidatos, etc.).
+    """
+    import cv2
+    from e14.lectura import cargar_paginas
+    from e14.preprocess import mejorar_para_ocr
+
+    alineador = _alineador()
+    paginas = cargar_paginas(archivo_origen, dpi=alineador.dpi)
+    if not paginas:
+        return None
+    for r in alineador.alinear_paginas(paginas[:1]):
+        if r.imagen_alineada is not None:
+            img = mejorar_para_ocr(r.imagen_alineada, escala=1.5)
+            ok, buf = cv2.imencode(".png", img)
+            return buf.tobytes() if ok else None
+    return None
 
 
 def _filas_para_revisar(alm: Almacen) -> list[dict]:
@@ -188,6 +222,11 @@ Confianza baja: <span class="warn">{{ confianza_baja }}</span></p>
 <b>{{ r.codigo_mesa }}</b> · {{ r.fuente }} · confianza {{ "%.0f"|format((r.confianza|float) * 100) }}%
 {% if r.archivo_origen %} · <a href="file://{{ r.archivo_origen }}" target="_blank">abrir archivo original</a>{% endif %}
 <p class="muted" style="margin:.3rem 0;">{{ r.notas or "(sin notas)" }}</p>
+{% if r.archivo_origen %}
+<img src="{{ url_for('imagen', archivo=r.archivo_origen) }}" loading="lazy"
+    style="max-width:480px; border:1px solid #ccc; display:block; margin:.4rem 0;"
+    alt="No se pudo alinear la imagen para vista previa — usá el link de arriba.">
+{% endif %}
 <form method="post" action="{{ url_for('verificar') }}">
 <input type="hidden" name="codigo_mesa" value="{{ r.codigo_mesa }}">
 <input type="hidden" name="fuente" value="{{ r.fuente }}">
@@ -231,6 +270,17 @@ def aprobar(indice_fila: int):
     return redirect(url_for("inicio"))
 
 
+@app.route("/imagen")
+def imagen():
+    archivo = request.args.get("archivo", "")
+    if not archivo or not Path(archivo).exists():
+        return "Archivo no encontrado.", 404
+    datos = _imagen_alineada_png(archivo)
+    if datos is None:
+        return "No se pudo alinear esta imagen (¿plantilla distinta o archivo dañado?).", 404
+    return Response(datos, mimetype="image/png")
+
+
 @app.route("/verificar", methods=["POST"])
 def verificar():
     alm = Almacen(str(_CFG["db"]))
@@ -254,7 +304,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--puerto", type=int, default=5000)
     args = p.parse_args(argv)
 
-    from pathlib import Path
     _CFG["db"] = args.db
     _CFG["catalogo"] = cargar_catalogo(args.catalogo) if args.catalogo else None
     _CFG["datos"] = Path(args.datos)
