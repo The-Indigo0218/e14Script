@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Auditoría ciudadana de actas E-14 — segunda vuelta presidencial 2026, Bolívar. Resultados por puesto y zona y discrepancias detectadas.">
+<title>Auditoría Ciudadana E-14 · Bolívar 2026</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --bg-soft: #11182e;
+    --card: #161e38;
+    --card-2: #1b2444;
+    --line: #2a3458;
+    --text: #eef2ff;
+    --muted: #97a3c7;
+    --c1: #38bdf8;   /* candidato 1 */
+    --c2: #fb7185;   /* candidato 2 */
+    --ok: #34d399;
+    --bad: #f87171;
+    --warn: #fbbf24;
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(56,189,248,.12), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(251,113,133,.10), transparent 55%),
+      var(--bg);
+    line-height: 1.5;
+  }
+  a { color: var(--c1); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+
+  header.hero {
+    padding: 44px 0 28px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255,255,255,.02), transparent);
+  }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: .8rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  .eyebrow .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok);
+    box-shadow: 0 0 0 4px rgba(52,211,153,.18); }
+  h1 { margin: 12px 0 6px; font-size: clamp(1.8rem, 3.6vw, 2.8rem); letter-spacing: -.02em; }
+  .sub { color: var(--muted); max-width: 70ch; margin: 0; }
+  .meta-row { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 10px 18px;
+    color: var(--muted); font-size: .9rem; }
+  .meta-row b { color: var(--text); }
+
+  section { padding: 34px 0; }
+  h2 { font-size: 1.25rem; margin: 0 0 4px; letter-spacing: -.01em; }
+  .section-hint { color: var(--muted); margin: 0 0 18px; font-size: .92rem; }
+
+  /* KPI cards */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .kpi {
+    background: linear-gradient(180deg, var(--card-2), var(--card));
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px; box-shadow: var(--shadow);
+  }
+  .kpi .label { color: var(--muted); font-size: .82rem; text-transform: uppercase;
+    letter-spacing: .08em; font-weight: 600; }
+  .kpi .value { font-size: 2.1rem; font-weight: 800; margin-top: 6px; letter-spacing: -.02em; }
+  .kpi .foot { color: var(--muted); font-size: .82rem; margin-top: 2px; }
+  .kpi.good .value { color: var(--ok); }
+  .kpi.bad .value { color: var(--bad); }
+  .kpi.warn .value { color: var(--warn); }
+
+  /* Votos comparativos */
+  .votos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cand {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
+    position: relative; overflow: hidden;
+  }
+  .cand::before { content:""; position:absolute; inset:0 auto 0 0; width:5px; }
+  .cand.c1::before { background: var(--c1); }
+  .cand.c2::before { background: var(--c2); }
+  .cand .name { font-weight: 700; font-size: 1.05rem; }
+  .cand .agrup { color: var(--muted); font-size: .82rem; margin-bottom: 12px; }
+  .cand .big { font-size: 2.3rem; font-weight: 800; letter-spacing: -.02em; }
+  .cand .big small { font-size: .9rem; color: var(--muted); font-weight: 600; }
+  .cand .ofi { color: var(--muted); font-size: .86rem; margin-top: 6px; }
+  .cand .ofi b { color: var(--text); }
+  .share { height: 12px; border-radius: 999px; background: var(--bg-soft);
+    overflow: hidden; display: flex; margin-top: 18px; border: 1px solid var(--line); }
+  .share > i { display: block; height: 100%; }
+  .share .s1 { background: var(--c1); } .share .s2 { background: var(--c2); }
+  .share-legend { display:flex; justify-content: space-between; color: var(--muted);
+    font-size: .8rem; margin-top: 6px; }
+
+  /* Explicación / transparencia */
+  .note {
+    background: var(--bg-soft); border: 1px solid var(--line);
+    border-left: 4px solid var(--c1); border-radius: 12px; padding: 14px 18px;
+    color: var(--muted); font-size: .92rem;
+  }
+  .note b { color: var(--text); }
+
+  /* Buscador */
+  .toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  .toolbar input {
+    flex: 1 1 260px; background: var(--card); border: 1px solid var(--line);
+    color: var(--text); padding: 11px 14px; border-radius: 11px; font-size: .95rem;
+  }
+  .toolbar input::placeholder { color: var(--muted); }
+  .toolbar .count { color: var(--muted); font-size: .88rem; }
+
+  /* Municipios (acordeón) */
+  .mun { background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); margin-bottom: 12px; box-shadow: var(--shadow); overflow: hidden; }
+  .mun > summary {
+    list-style: none; cursor: pointer; padding: 16px 18px;
+    display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+  }
+  .mun > summary::-webkit-details-marker { display: none; }
+  .mun summary:hover { background: rgba(255,255,255,.02); }
+  .mun .title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .mun .chev { color: var(--muted); transition: transform .2s; flex: none; }
+  .mun[open] .chev { transform: rotate(90deg); }
+  .mun .mname { font-weight: 700; font-size: 1.05rem; }
+  .mun .mname small { color: var(--muted); font-weight: 500; font-size: .82rem; margin-left: 6px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .pill {
+    font-size: .78rem; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--line); white-space: nowrap;
+  }
+  .pill.ok { color: var(--ok); border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.10); }
+  .pill.bad { color: var(--bad); border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.10); }
+  .pill.warn { color: var(--warn); border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.10); }
+  .pill.muted { color: var(--muted); }
+
+  .mun .body { padding: 4px 18px 18px; border-top: 1px solid var(--line); }
+  .zona-h { margin: 16px 0 6px; font-size: .82rem; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--muted); font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  thead th { text-align: right; color: var(--muted); font-weight: 600; font-size: .78rem;
+    text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  thead th:first-child, tbody td:first-child { text-align: left; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid rgba(42,52,88,.5); text-align: right;
+    font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: rgba(255,255,255,.02); }
+  .num.c1 { color: var(--c1); } .num.c2 { color: var(--c2); }
+  td .delta { color: var(--muted); font-size: .78rem; }
+  .dot-ok { color: var(--ok); } .dot-bad { color: var(--bad); } .dot-warn { color: var(--warn); }
+
+  footer { border-top: 1px solid var(--line); padding: 26px 0 50px; color: var(--muted); font-size: .86rem; }
+  footer b { color: var(--text); }
+  .empty { text-align: center; color: var(--muted); padding: 40px; background: var(--card);
+    border: 1px dashed var(--line); border-radius: var(--radius); }
+
+  .demo-banner { background: repeating-linear-gradient(45deg, #b45309, #b45309 14px, #92400e 14px, #92400e 28px);
+    color: #fff7ed; text-align: center; padding: 11px 16px; font-weight: 700; font-size: .92rem;
+    letter-spacing: .01em; position: sticky; top: 0; z-index: 9; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+
+  @media (max-width: 820px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .votos { grid-template-columns: 1fr; }
+    thead { display: none; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tbody tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    tbody td { display: flex; justify-content: space-between; border: none; padding: 4px 0; text-align: right; }
+    tbody td::before { content: attr(data-l); color: var(--muted); font-size: .8rem; }
+  }
+</style>
+</head>
+<body>
+<div id="demo-banner" class="demo-banner" hidden>
+  ⚠ DATOS DE DEMOSTRACIÓN — no son resultados reales. Sirven solo para mostrar cómo funciona el tablero.
+</div>
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><span class="dot"></span> Auditoría ciudadana en curso</span>
+    <h1 id="titulo">Auditoría de actas E-14</h1>
+    <p class="sub">Comparamos, mesa por mesa, el acta del <b>testigo electoral</b> contra la
+      de la <b>Registraduría</b>. Acá ves cómo van los resultados por puesto y zona, y cuántas
+      discrepancias se detectaron. Datos agregados, sin información personal.</p>
+    <div class="meta-row" id="metarow"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section>
+    <h2>Resumen general</h2>
+    <p class="section-hint">Estado global de la auditoría sobre las mesas ya procesadas.</p>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section>
+    <h2>Conteo de votos comparado</h2>
+    <p class="section-hint">Totales según el acta del testigo (auditoría) y la oficial de la Registraduría.</p>
+    <div class="votos" id="votos"></div>
+    <p class="note" style="margin-top:16px" id="nota-votos"></p>
+  </section>
+
+  <section>
+    <h2>Resultados por puesto y zona</h2>
+    <p class="section-hint">Tocá un municipio para desplegar sus zonas y puestos. Buscá por nombre o número.</p>
+    <div class="toolbar">
+      <input id="buscar" type="search" placeholder="Buscar municipio, zona o puesto…" autocomplete="off">
+      <span class="count" id="buscar-count"></span>
+    </div>
+    <div id="municipios"></div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><b>Metodología.</b> Cada mesa se considera <span class="dot-ok">coincide</span> cuando los votos
+      del acta del testigo y la de la Registraduría son idénticos; <span class="dot-bad">discrepancia</span>
+      cuando difieren en al menos una casilla; <span class="dot-warn">en revisión</span> cuando la lectura
+      automática tuvo baja confianza y un humano la está verificando.</p>
+    <p><b>Privacidad.</b> Este tablero publica únicamente conteos agregados. No expone fotos de actas,
+      cédulas de jurados, ni identificadores internos.</p>
+    <p id="pie-fecha" class="muted"></p>
+  </div>
+</footer>
+
+<script>
+const DATOS = /*__DATOS__*/;
+
+const fmt = (n) => (n ?? 0).toLocaleString("es-CO");
+const pctTxt = (p) => p === null || p === undefined ? "—" : p.toFixed(1) + "%";
+const el = (html) => { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+
+const C1 = "1", C2 = "2";          // ids de candidato (para nombres)
+const K1 = "c1", K2 = "c2";        // claves de votos en votos_t / votos_r
+const nombreC = (n) => DATOS.candidatos[n] || ("Candidato " + n);
+const agrup = { "1": "Pacto Histórico", "2": "Defensores de la Patria" };
+
+function deltaTxt(t, r) {
+  const d = (r ?? 0) - (t ?? 0);
+  if (d === 0) return "";
+  return ` (${d > 0 ? "+" : ""}${fmt(d)})`;
+}
+
+function render() {
+  if (DATOS.demo) document.getElementById("demo-banner").hidden = false;
+  document.getElementById("titulo").textContent =
+    `${DATOS.eleccion} · ${DATOS.departamento}`;
+
+  const g = DATOS.global;
+
+  // Meta row
+  document.getElementById("metarow").innerHTML = `
+    <span>Actualizado: <b>${DATOS.generado}</b></span>
+    <span>Municipios con datos: <b>${DATOS.municipios.length}</b></span>
+    <span>Mesas auditadas: <b>${fmt(g.mesas)}</b></span>`;
+  document.getElementById("pie-fecha").textContent =
+    `Generado el ${DATOS.generado}. Tablero de solo lectura.`;
+
+  // KPIs
+  const comparables = g.coincide + g.discrepancia;
+  document.getElementById("kpis").innerHTML = `
+    <div class="kpi"><div class="label">Mesas auditadas</div>
+      <div class="value">${fmt(g.mesas)}</div>
+      <div class="foot">${fmt(comparables)} comparables</div></div>
+    <div class="kpi good"><div class="label">Coincidencia</div>
+      <div class="value">${pctTxt(g.pct_coincidencia)}</div>
+      <div class="foot">${fmt(g.coincide)} mesas idénticas</div></div>
+    <div class="kpi bad"><div class="label">Discrepancias</div>
+      <div class="value">${fmt(g.discrepancia)}</div>
+      <div class="foot">mesas con diferencias</div></div>
+    <div class="kpi warn"><div class="label">En revisión</div>
+      <div class="value">${fmt(g.confianza_baja)}</div>
+      <div class="foot">${fmt(g.falta_fuente)} sin pareja de fuente</div></div>`;
+
+  // Votos comparados
+  const v = g.votos_t, vr = g.votos_r;
+  const tot = (v[K1] || 0) + (v[K2] || 0);
+  const s1 = tot ? (100 * (v[K1] || 0) / tot) : 50;
+  const s2 = 100 - s1;
+  const card = (n, k, cls) => `
+    <div class="cand ${cls}">
+      <div class="name">${nombreC(n)}</div>
+      <div class="agrup">${agrup[n] || ""}</div>
+      <div class="big">${fmt(v[k])} <small>votos · testigo</small></div>
+      <div class="ofi">Registraduría: <b>${fmt(vr[k])}</b><span class="delta">${deltaTxt(v[k], vr[k])}</span></div>
+    </div>`;
+  document.getElementById("votos").innerHTML = card(C1, K1, "c1") + card(C2, K2, "c2");
+  // (barra de reparto debajo de ambas tarjetas)
+  document.getElementById("votos").insertAdjacentElement("afterend", el(`
+    <div style="margin-top:14px">
+      <div class="share"><i class="s1" style="width:${s1}%"></i><i class="s2" style="width:${s2}%"></i></div>
+      <div class="share-legend">
+        <span style="color:var(--c1)">${nombreC(C1)} · ${s1.toFixed(1)}%</span>
+        <span style="color:var(--c2)">${nombreC(C2)} · ${s2.toFixed(1)}%</span>
+      </div>
+    </div>`));
+
+  const difTot = (vr[K1]||0)+(vr[K2]||0) - tot;
+  document.getElementById("nota-votos").innerHTML =
+    tot === 0
+      ? `Todavía no hay votos cargados para mostrar el comparativo.`
+      : `Sobre ${fmt(g.coincide + g.discrepancia)} mesas comparables, el total de votos a presidente
+         del testigo y de la Registraduría difiere en <b>${fmt(Math.abs(difTot))}</b> voto(s).
+         Una diferencia de cero significa coincidencia exacta en el gran total.`;
+
+  renderMunicipios(DATOS.municipios);
+}
+
+function barraEstado(o) {
+  const total = o.coincide + o.discrepancia + o.confianza_baja || 1;
+  return `<div class="badges">
+    <span class="pill ok" title="Mesas idénticas">✓ ${fmt(o.coincide)} coinciden</span>
+    <span class="pill bad" title="Mesas con diferencias">▲ ${fmt(o.discrepancia)} discrepan</span>
+    ${o.confianza_baja ? `<span class="pill warn">↺ ${fmt(o.confianza_baja)} en revisión</span>` : ``}
+    <span class="pill muted">${fmt(o.mesas)} mesas</span>
+  </div>`;
+}
+
+function filaPuesto(p) {
+  const v = p.votos_t, vr = p.votos_r;
+  const est = p.discrepancia > 0
+    ? `<span class="dot-bad">▲ ${fmt(p.discrepancia)}</span>`
+    : `<span class="dot-ok">✓</span>`;
+  return `<tr>
+    <td data-l="Puesto">Puesto ${p.puesto}</td>
+    <td data-l="Mesas">${fmt(p.mesas)}</td>
+    <td data-l="Coinciden"><span class="dot-ok">${fmt(p.coincide)}</span></td>
+    <td data-l="Discrepan">${est}</td>
+    <td data-l="Revisión">${p.confianza_baja ? `<span class="dot-warn">${fmt(p.confianza_baja)}</span>` : "—"}</td>
+    <td data-l="${nombreC(C1)}" class="num c1">${fmt(v[K1])}<span class="delta">${deltaTxt(v[K1], vr[K1])}</span></td>
+    <td data-l="${nombreC(C2)}" class="num c2">${fmt(v[K2])}<span class="delta">${deltaTxt(v[K2], vr[K2])}</span></td>
+  </tr>`;
+}
+
+function bloqueZona(z) {
+  return `<div class="zona-h">Zona ${z.zona} · ${fmt(z.mesas)} mesas · ${pctTxt(z.pct_coincidencia)} coincidencia</div>
+    <table>
+      <thead><tr>
+        <th>Puesto</th><th>Mesas</th><th>Coinciden</th><th>Discrepan</th><th>Revisión</th>
+        <th>${nombreC(C1)}</th><th>${nombreC(C2)}</th>
+      </tr></thead>
+      <tbody>${z.puestos.map(filaPuesto).join("")}</tbody>
+    </table>`;
+}
+
+function tarjetaMunicipio(m, abierto) {
+  const det = el(`<details class="mun" ${abierto ? "open" : ""}>
+    <summary>
+      <div class="title">
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="mname">${m.nombre} <small>cód. ${m.id}</small></span>
+      </div>
+      ${barraEstado(m)}
+    </summary>
+    <div class="body">${m.zonas.map(bloqueZona).join("")}</div>
+  </details>`);
+  return det;
+}
+
+function renderMunicipios(lista, abrirSiUno = true) {
+  const cont = document.getElementById("municipios");
+  cont.innerHTML = "";
+  if (!lista.length) {
+    cont.appendChild(el(`<div class="empty">No hay municipios que coincidan con la búsqueda.</div>`));
+    return;
+  }
+  const abrir = abrirSiUno && lista.length <= 2;
+  lista.forEach((m) => cont.appendChild(tarjetaMunicipio(m, abrir)));
+}
+
+function filtrar(q) {
+  q = q.trim().toLowerCase();
+  if (!q) return DATOS.municipios;
+  return DATOS.municipios
+    .map((m) => {
+      const muniMatch = m.nombre.toLowerCase().includes(q) || String(m.id).includes(q);
+      if (muniMatch) return m;
+      const zonas = m.zonas.filter((z) => {
+        const zMatch = String(z.zona).includes(q) || ("zona " + z.zona).includes(q);
+        if (zMatch) return true;
+        return z.puestos.some((p) => String(p.puesto).includes(q));
+      });
+      return zonas.length ? { ...m, zonas } : null;
+    })
+    .filter(Boolean);
+}
+
+const input = document.getElementById("buscar");
+input.addEventListener("input", () => {
+  const r = filtrar(input.value);
+  document.getElementById("buscar-count").textContent =
+    `${r.length} de ${DATOS.municipios.length} municipios`;
+  renderMunicipios(r, false);
+});
+
+render();
+document.getElementById("buscar-count").textContent =
+  `${DATOS.municipios.length} municipios`;
+</script>
+</body>
+</html>

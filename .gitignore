@@ -13,6 +13,7 @@ drive_credentials.json
 *.xlsx
 debug/
 salidas/
+sitio/
 
 # Actas reales de entrada (no subir por defecto; sí conservar las carpetas)
 datos/**/*.pdf

@@ -360,6 +360,43 @@ python ver_acta.py actas.db --fuente registraduria
 Sin `GEMINI_API_KEY`, los lectores usan backend **manual**: alinean pero dejan votos en
 `null`. El comparador marca **SIN_LECTURA** (ya no dice “coinciden” en vacío).
 
+### 10. Tablero público para inversores (sitio estático)
+
+Hay **dos** tableros, distintos a propósito:
+
+- `dashboard.py` — control **local** (solo tu máquina). Muestra imágenes alineadas de
+  los E-14, panel de aprobación y cola de revisión. **Nunca** se expone a internet
+  (las fotos tienen cédulas de jurados).
+- `dashboard_publico.py` — genera un **sitio estático** de SOLO LECTURA con números
+  agregados por **municipio · zona · puesto**: votos por candidato y conteo de
+  discrepancias. No publica imágenes, rutas, KIT/CIV ni datos de jurados. Pensado para
+  una URL pública que los inversores puedan abrir sin login.
+
+```bash
+# Genera sitio/index.html (autocontenido) + sitio/datos.json
+python dashboard_publico.py --db actas.db --catalogo "Mesa a Mesa.xlsx"
+```
+
+`--catalogo` es opcional: solo se usa para mostrar el nombre del municipio en vez del
+código. Sin él, sale "Municipio N".
+
+**Publicar (sin instalar nada):** entrá a <https://app.netlify.com/drop> y arrastrá la
+carpeta `sitio/`. Netlify te da una URL pública al instante. Para republicar tras una
+nueva corrida, volvé a generar `sitio/` y arrastralo de nuevo (o, si instalás la CLI:
+`netlify deploy --prod --dir sitio`).
+
+Regenerá el sitio cada vez que avances la auditoría — es una foto del estado actual de
+`actas.db`.
+
+**Demo para mostrar el tablero lleno** (mientras llegan los datos reales):
+
+```bash
+python dashboard_publico.py --demo --salida sitio
+```
+
+Genera datos sintéticos realistas y muestra un aviso bien visible de "DATOS DE
+DEMOSTRACIÓN" en la página, para no confundirlos con resultados reales.
+
 ---
 
 ## Estado del proyecto
