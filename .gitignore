@@ -10,18 +10,19 @@ drive_credentials.json
 
 # Datos y salidas generadas
 *.db
+*.bak
+*.bak.*
 *.xlsx
 debug/
 salidas/
 sitio/
+# Muestras demo movidas fuera del flujo (locales, no se suben)
+muestras_demo/
 
 # Actas reales de entrada (no subir por defecto; sí conservar las carpetas)
 datos/**/*.pdf
 datos/**/*.jpg
 datos/**/*.png
-# Par de prueba para handoff (mesa 21_01_13, Cartagena)
-!datos/testigos/21_01_13_testigo.pdf
-!datos/registraduria/21_01_13_registraduria.pdf
 
 # Sistema
 .DS_Store

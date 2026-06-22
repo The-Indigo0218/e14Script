@@ -29,9 +29,12 @@ from e14.almacen import Almacen
 from e14.catalogo import cargar_catalogo
 from e14.cobertura import cobertura_lote
 from e14.comparador import comparar, resumen
-from e14.mesa import municipio_zona_puesto_mesa_desde_codigo
-from e14.modelo import FUENTE_REGISTRADURIA, FUENTE_TESTIGO
+from e14.mesa import municipio_zona_puesto_mesa_desde_codigo, etiqueta_mesa
+from e14.modelo import CANDIDATOS, FUENTE_REGISTRADURIA, FUENTE_TESTIGO
 from e14.ocr import UMBRAL_REVISION
+
+_NOMBRE_C1 = CANDIDATOS.get("1", ("Candidato 1",))[0]
+_NOMBRE_C2 = CANDIDATOS.get("2", ("Candidato 2",))[0]
 
 PLANTILLA = "plantillas/muestra-formulario-e14-segunda-vuelta.pdf"
 
@@ -104,6 +107,34 @@ def _cobertura_por_municipio() -> list[dict]:
             "faltan_ambas": r["faltan_ambas"], "fuera_de_catalogo": r["fuera_de_catalogo"],
             "pct": cob.pct_listas(),
         })
+    return filas
+
+
+def _consulados(alm: Almacen) -> list[dict]:
+    """
+    Actas de consulados (voto en el exterior) — se muestran aparte porque no
+    tienen Registraduría con que cruzar (entran como 'Falta fuente' en la
+    comparación general) y conviene ver sus votos leídos por sí solos.
+    """
+    filas = []
+    for codigo, f in alm.leer_por_fuente(FUENTE_TESTIGO).items():
+        meta = municipio_zona_puesto_mesa_desde_codigo(codigo)
+        municipio = (meta.get("municipio") if meta else "") or ""
+        if not municipio.lower().startswith("consulado"):
+            continue
+        conf = f.get("confianza")
+        filas.append({
+            "codigo": codigo,
+            "etiqueta": etiqueta_mesa(codigo, meta),
+            "c1": f.get("c1"), "c2": f.get("c2"),
+            "blanco": f.get("blanco"), "nulos": f.get("nulos"),
+            "no_marcados": f.get("no_marcados"), "suma_total": f.get("suma_total"),
+            "confianza": float(conf) if conf is not None else None,
+            "revisar": str(f.get("necesita_revision")) in ("1", "True", "true"),
+            "verificado": str(f.get("verificado_manualmente")) in ("1", "True", "true"),
+            "archivo_origen": f.get("archivo_origen"),
+        })
+    filas.sort(key=lambda r: r["codigo"])
     return filas
 
 
@@ -199,6 +230,26 @@ Confianza baja: <span class="warn">{{ confianza_baja }}</span></p>
 {% endfor %}</table>
 {% else %}<p class="vacio">Sin mesas cargadas todavía en la base local.</p>{% endif %}
 
+<h2>Consulados (voto exterior · solo testigo)</h2>
+{% if consulados %}
+<p class="muted">Sin Registraduría con que cruzar todavía — se listan los votos leídos del testigo.</p>
+<table><tr><th>Mesa</th><th>{{ nombre_c1 }}<br>(c1)</th><th>{{ nombre_c2 }}<br>(c2)</th>
+<th>Blanco</th><th>Nulos</th><th>No marcados</th><th>Total</th><th>Confianza</th><th>Estado</th></tr>
+{% for c in consulados %}
+<tr><td><b>{{ c.etiqueta }}</b></td>
+<td>{{ c.c1 if c.c1 is not none else "—" }}</td>
+<td>{{ c.c2 if c.c2 is not none else "—" }}</td>
+<td>{{ c.blanco if c.blanco is not none else "—" }}</td>
+<td>{{ c.nulos if c.nulos is not none else "—" }}</td>
+<td>{{ c.no_marcados if c.no_marcados is not none else "—" }}</td>
+<td><b>{{ c.suma_total if c.suma_total is not none else "—" }}</b></td>
+<td>{% if c.confianza is not none %}{{ "%.0f"|format(c.confianza * 100) }}%{% else %}—{% endif %}</td>
+<td>{% if c.verificado %}<span class="ok">Verificado</span>
+{% elif c.revisar %}<span class="warn">Revisar</span>
+{% else %}<span class="ok">OK</span>{% endif %}</td></tr>
+{% endfor %}</table>
+{% else %}<p class="vacio">Sin actas de consulado cargadas.</p>{% endif %}
+
 <h2>Panel maestro (Sheets)</h2>
 {% if panel %}
 <table><tr><th>Persona</th><th>Fecha</th><th>Municipio</th><th>Zona</th><th>Puesto</th>
@@ -252,11 +303,13 @@ def inicio():
     )
     revision = _filas_para_revisar(alm)
     por_puesto = _comparacion_por_puesto(testigo, registraduria)
+    consulados = _consulados(alm)
     alm.cerrar()
     return render_template_string(
         _PLANTILLA, cobertura=_cobertura_por_municipio(), comp=comp,
         confianza_baja=confianza_baja, panel=_panel_sheets(), revision=revision,
-        por_puesto=por_puesto, db=_CFG["db"],
+        por_puesto=por_puesto, consulados=consulados, db=_CFG["db"],
+        nombre_c1=_NOMBRE_C1, nombre_c2=_NOMBRE_C2,
     )
 
 
