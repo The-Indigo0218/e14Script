@@ -11,6 +11,12 @@ Formato:
   • --tipo  : de qué COPIA del E-14 viene (claveros, delegados, transmisión).
   • --solo-pagina-1 : solo la página de candidatos/totales, sin firmas
                        (1 llamada OCR por acta; evita procesar la hoja de firmas).
+  • --paralelo N : N lecturas OCR en paralelo (la espera de la API es lo lento;
+                    combinar con varias claves en GEMINI_API_KEYS multiplica el
+                    cupo efectivo — ver e14/ocr.py:BackendGeminiMultiKey).
+  • --forzar : reprocesa TODO aunque ya esté guardado y OK (gasta cuota/saldo
+               de nuevo). Sin esto, las mesas ya guardadas y sin necesita_revision
+               se saltan — solo se (re)leen las nuevas y las que quedaron en REVISAR.
 """
 
 from __future__ import annotations
@@ -27,6 +33,8 @@ def parsear_args(carpeta_defecto: str, tipo_defecto: str | None = None):
     codigo: str | None = None
     tipo: str | None = tipo_defecto
     solo_pagina_1 = False
+    paralelo = 1
+    forzar = False
 
     posicionales: list[str] = []
     args = sys.argv[1:]
@@ -39,8 +47,14 @@ def parsear_args(carpeta_defecto: str, tipo_defecto: str | None = None):
         elif a == "--tipo" and i + 1 < len(args):
             tipo = args[i + 1]
             i += 2
+        elif a == "--paralelo" and i + 1 < len(args):
+            paralelo = int(args[i + 1])
+            i += 2
         elif a in ("--solo-pagina-1", "--solo-p1"):
             solo_pagina_1 = True
+            i += 1
+        elif a == "--forzar":
+            forzar = True
             i += 1
         else:
             posicionales.append(a)
@@ -58,4 +72,4 @@ def parsear_args(carpeta_defecto: str, tipo_defecto: str | None = None):
         entrada = Path(carpeta_defecto)
 
     layouts = [LAYOUT_ACTA_COMPLETA] if solo_pagina_1 else None
-    return entrada, db, codigo, tipo, layouts, solo_pagina_1
+    return entrada, db, codigo, tipo, layouts, solo_pagina_1, paralelo, forzar

@@ -22,10 +22,16 @@ muestras_demo/
 # Actas reales de entrada (no subir por defecto; sí conservar las carpetas)
 datos/**/*.pdf
 datos/**/*.jpg
+datos/**/*.jpeg
 datos/**/*.png
+
+# Carpetas de material crudo recién llegado (Drive), ya mapeado a datos/
+/Actas delegados/
+/testigos/
 
 # Sistema
 .DS_Store
+.~lock.*#
 
 # Contexto de continuidad entre sesiones de chat (local, no se sube)
 context.md

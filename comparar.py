@@ -59,6 +59,11 @@ def _h(cell, txt, bg=AZUL, fg=BLANCO, bold=True):
 def generar_excel(comparaciones, salida):
     wb = Workbook()
 
+    con_par = [c for c in comparaciones if c.presente_testigo and c.presente_registraduria]
+    sin_par = [c for c in comparaciones if not (c.presente_testigo and c.presente_registraduria)]
+    falta_testigo = [c for c in sin_par if not c.presente_testigo]
+    falta_registraduria = [c for c in sin_par if not c.presente_registraduria]
+
     # ── Hoja Resumen ──
     ws = wb.active
     ws.title = "Resumen"
@@ -66,19 +71,34 @@ def generar_excel(comparaciones, salida):
     ws.merge_cells("A1:B1")
     _h(ws["A1"], "COMPARACIÓN E-14 — TESTIGO vs REGISTRADURÍA")
     filas = [
-        ("Mesas comparadas", r["total"]),
+        ("Mesas con par completo", len(con_par)),
         ("✅ Coinciden", r["COINCIDE"]),
         ("⛔ Con discrepancia", r["DISCREPANCIA"]),
-        ("⚠️ Falta una fuente", r["FALTA_FUENTE"]),
         ("⏳ Sin lectura OCR", r["SIN_LECTURA"]),
         ("📋 Lectura incompleta", r["LECTURA_INCOMPLETA"]),
+        ("⚠️ Falta copia testigo", len(falta_testigo)),
+        ("⚠️ Falta copia registraduría", len(falta_registraduria)),
     ]
     for i, (etq, val) in enumerate(filas, start=3):
         ws.cell(i, 1, etq).font = Font(bold=True, name="Arial", size=10)
         ws.cell(i, 2, val).alignment = Alignment(horizontal="center")
-    ws.merge_cells(f"A{len(filas) + 4}:B{len(filas) + 4}")
+
+    fila_sig = len(filas) + 3
+    if sin_par:
+        fila_sig += 1
+        ws.merge_cells(f"A{fila_sig}:B{fila_sig}")
+        _h(ws.cell(fila_sig, 1), "Mesas sin par completo (no entran en Comparación)", bg=AMARILLO, fg="000000")
+        fila_sig += 1
+        for c in sorted(sin_par, key=lambda c: c.codigo_mesa):
+            falta = "Falta registraduría" if c.presente_testigo else "Falta testigo"
+            ws.cell(fila_sig, 1, c.codigo_mesa).font = Font(name="Arial", size=10)
+            ws.cell(fila_sig, 2, falta).alignment = Alignment(horizontal="center")
+            fila_sig += 1
+        fila_sig += 1
+
+    ws.merge_cells(f"A{fila_sig}:B{fila_sig}")
     nota = ws.cell(
-        len(filas) + 4, 1,
+        fila_sig, 1,
         f"Δ Margen: positivo favorece a {_NOMBRE_C1} (c1); negativo, a {_NOMBRE_C2} (c2). "
         f"Confianza OCR < {UMBRAL_REVISION:.0%} dispara 'PENDIENTE VERIFICAR' en Verificación "
         "manual OCR; usa 'python verificar_acta.py actas.db <mesa> --fuente <testigo|registraduria> "
@@ -142,7 +162,7 @@ def generar_excel(comparaciones, salida):
         return c
 
     fila = 2
-    for comp in comparaciones:
+    for comp in con_par:
         ws2.cell(fila, 1, comp.codigo_mesa).font = Font(bold=True, name="Arial", size=9)
         est = ws2.cell(fila, 2, comp.estado)
         est_bg = {
@@ -312,7 +332,7 @@ def generar_excel(comparaciones, salida):
     ):
         _h(ws_t.cell(1, j), h)
     fila_t = 2
-    for comp in comparaciones:
+    for comp in con_par:
         alerta = ""
         if comp.alerta_copias_en_foto:
             alerta = "Varias copias en foto del testigo: revisar si los números coinciden"
@@ -337,7 +357,7 @@ def generar_excel(comparaciones, salida):
     for j, h in enumerate(["Mesa", "Columna", "Testigo", "Registraduría", "Diferencia"], 1):
         _h(ws3.cell(1, j), h)
     fila = 2
-    for comp in comparaciones:
+    for comp in con_par:
         if comp.estado != "DISCREPANCIA":
             continue
         for d in comp.celdas_discrepantes:

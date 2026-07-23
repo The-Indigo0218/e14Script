@@ -29,6 +29,7 @@ de mayor coincidencia (así no importa el orden ni la orientación de las págin
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -136,6 +137,13 @@ class Alineador:
         # un punto al deformarlo) aunque el conteo de inliers parezca alto.
         self._bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
         self._layouts: list[_LayoutPlantilla] = []
+        # SIFT/BFMatcher no son thread-safe entre sí: con --paralelo > 1 varios
+        # hilos llamaban a la vez a la MISMA instancia de OpenCV, lo que disparó
+        # un crecimiento descontrolado de memoria en su capa C++ (proceso matado
+        # por el OOM killer con ~9GB de RSS tras solo ~27 actas). Serializamos
+        # solo este paso (CPU, rápido); la espera de la API de OCR sigue en
+        # paralelo entre hilos, que es donde realmente se gana velocidad.
+        self._lock = threading.Lock()
 
         paginas = render_pdf_gris(plantilla_pdf, dpi=dpi)
         for idx, gris in enumerate(paginas):
@@ -165,22 +173,23 @@ class Alineador:
 
     def alinear_pagina(self, scan_gris: np.ndarray, indice_pagina: int,
                        solo_layouts: list[str] | None = None) -> ResultadoAlineacion:
-        kp_scan, des_scan = self._sift.detectAndCompute(scan_gris, None)
-        mejor = ResultadoAlineacion(indice_pagina, None, 0, False, None)
-        candidatos = self._layouts
-        if solo_layouts:
-            candidatos = [l for l in self._layouts if l.layout_id in solo_layouts]
-        for layout in candidatos:
-            inliers, alineada = self._alinear_contra(kp_scan, des_scan, scan_gris, layout)
-            if inliers > mejor.inliers:
-                mejor = ResultadoAlineacion(
-                    indice_pagina=indice_pagina,
-                    layout_id=layout.layout_id,
-                    inliers=inliers,
-                    confiable=inliers >= INLIERS_MIN_CONFIABLE,
-                    imagen_alineada=alineada,
-                )
-        return mejor
+        with self._lock:
+            kp_scan, des_scan = self._sift.detectAndCompute(scan_gris, None)
+            mejor = ResultadoAlineacion(indice_pagina, None, 0, False, None)
+            candidatos = self._layouts
+            if solo_layouts:
+                candidatos = [l for l in self._layouts if l.layout_id in solo_layouts]
+            for layout in candidatos:
+                inliers, alineada = self._alinear_contra(kp_scan, des_scan, scan_gris, layout)
+                if inliers > mejor.inliers:
+                    mejor = ResultadoAlineacion(
+                        indice_pagina=indice_pagina,
+                        layout_id=layout.layout_id,
+                        inliers=inliers,
+                        confiable=inliers >= INLIERS_MIN_CONFIABLE,
+                        imagen_alineada=alineada,
+                    )
+            return mejor
 
     def alinear_pdf(self, scan_pdf: str | Path,
                     solo_layouts: list[str] | None = None) -> list[ResultadoAlineacion]:

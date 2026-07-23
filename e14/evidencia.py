@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import cv2
@@ -97,22 +98,8 @@ def detectar_copias_en_pdf_texto(ruta: str | Path) -> list[str]:
     return _ordenar(encontradas)
 
 
-def detectar_copias_con_gemini(imagen_gris: np.ndarray) -> tuple[list[str], str | None]:
-    """Usa visión (Gemini) para listar ejemplares visibles en la foto."""
-    import base64
-    import requests
-
-    cargar_env()
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return [], "Sin GEMINI_API_KEY para detectar copias en imagen."
-
-    modelo = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
-    ok, buf = cv2.imencode(".png", imagen_gris)
-    if not ok:
-        return [], "No se pudo codificar la imagen."
-    b64 = base64.b64encode(buf.tobytes()).decode("ascii")
-    prompt = (
+def _prompt_copias_visibles() -> str:
+    return (
         "Acta electoral colombiana E-14. En la parte superior de cada bloque puede "
         "decir CLAVEROS, DELEGADOS o TRANSMISIÓN (a veces hay 1, 2 o 3 copias en "
         "la misma foto, una al lado de la otra).\n"
@@ -120,28 +107,114 @@ def detectar_copias_con_gemini(imagen_gris: np.ndarray) -> tuple[list[str], str 
         '{"copias_visibles":["claveros","delegados"], "notas":"breve"} '
         "Valores permitidos en copias_visibles: claveros, delegados, transmision."
     )
+
+
+def _parsear_copias_json(texto: str) -> tuple[list[str], str | None]:
+    data = json.loads(texto)
+    copias = [
+        normalizar_tipo_acta(c)
+        for c in data.get("copias_visibles", [])
+        if normalizar_tipo_acta(c) != TIPO_DESCONOCIDO
+    ]
+    return _ordenar(set(copias)), data.get("notas")
+
+
+def _detectar_copias_gemini_key(imagen_gris: np.ndarray, api_key: str, modelo: str) -> tuple[list[str], str | None]:
+    import base64
+    import requests
+    ok, buf = cv2.imencode(".png", imagen_gris)
+    if not ok:
+        return [], "No se pudo codificar la imagen."
+    b64 = base64.b64encode(buf.tobytes()).decode("ascii")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
     cuerpo = {
         "contents": [{"parts": [
-            {"text": prompt},
+            {"text": _prompt_copias_visibles()},
             {"inline_data": {"mime_type": "image/png", "data": b64}},
         ]}],
         "generationConfig": {"response_mime_type": "application/json", "temperature": 0},
     }
-    try:
-        r = requests.post(url, params={"key": api_key}, json=cuerpo, timeout=45)
-        r.raise_for_status()
-        texto = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        data = json.loads(texto)
-        copias = [
-            normalizar_tipo_acta(c)
-            for c in data.get("copias_visibles", [])
-            if normalizar_tipo_acta(c) != TIPO_DESCONOCIDO
-        ]
-        notas = data.get("notas")
-        return _ordenar(set(copias)), notas
-    except Exception as e:  # noqa: BLE001
-        return [], f"Detección Gemini falló: {e}"
+    r = requests.post(url, params={"key": api_key}, json=cuerpo, timeout=45)
+    r.raise_for_status()
+    texto = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return _parsear_copias_json(texto)
+
+
+def _detectar_copias_openrouter_key(imagen_gris: np.ndarray, api_key: str, modelo: str) -> tuple[list[str], str | None]:
+    import base64
+    import requests
+    ok, buf = cv2.imencode(".png", imagen_gris)
+    if not ok:
+        return [], "No se pudo codificar la imagen."
+    b64 = base64.b64encode(buf.tobytes()).decode("ascii")
+    cuerpo = {
+        "model": modelo,
+        "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": _prompt_copias_visibles()},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            ],
+        }],
+    }
+    r = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "X-Title": "Auditoria E14"},
+        json=cuerpo, timeout=45,
+    )
+    r.raise_for_status()
+    texto = r.json()["choices"][0]["message"]["content"]
+    return _parsear_copias_json(texto)
+
+
+def detectar_copias_con_gemini(imagen_gris: np.ndarray) -> tuple[list[str], str | None]:
+    """
+    Usa visión (Gemini, con respaldo OpenRouter) para listar ejemplares visibles
+    en la foto.
+
+    Independiente del backend OCR principal: rota por TODAS las keys de Gemini
+    disponibles y, si todas fallan (cuota agotada o lo que sea), cae a TODAS las
+    de OpenRouter — así forzar OCR_BACKEND=openrouter en el lector principal no
+    apaga esta detección, que antes dependía únicamente de la key singular
+    GEMINI_API_KEY sin rotación ni respaldo.
+    """
+    cargar_env()
+    modelo_gem = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+    modelo_or = os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash")
+
+    gem_keys = [k.strip() for k in os.environ.get("GEMINI_API_KEYS", "").split(",") if k.strip()]
+    gem_unica = os.environ.get("GEMINI_API_KEY")
+    if gem_unica and gem_unica not in gem_keys:
+        gem_keys.append(gem_unica)
+
+    or_keys = [k.strip() for k in os.environ.get("OPENROUTER_API_KEYS", "").split(",") if k.strip()]
+    or_unica = os.environ.get("OPENROUTER_API_KEY")
+    if or_unica and or_unica not in or_keys:
+        or_keys.append(or_unica)
+
+    if not gem_keys and not or_keys:
+        return [], "Sin GEMINI_API_KEY/OPENROUTER_API_KEY para detectar copias en imagen."
+
+    ultimo_error = None
+    for key in gem_keys:
+        try:
+            return _detectar_copias_gemini_key(imagen_gris, key, modelo_gem)
+        except Exception as e:  # noqa: BLE001
+            ultimo_error = f"Detección Gemini falló: {e}"
+    # OpenRouter: 2 intentos por key con espera corta — bajo --paralelo alto cada
+    # hilo hace esta llamada ADEMÁS de la del OCR principal, así que la cuota se
+    # satura más rápido y un corte transitorio (SSL, 429 puntual) es más probable.
+    for key in or_keys:
+        for intento in range(2):
+            try:
+                return _detectar_copias_openrouter_key(imagen_gris, key, modelo_or)
+            except Exception as e:  # noqa: BLE001
+                ultimo_error = f"Detección OpenRouter falló: {e}"
+                if intento == 0:
+                    time.sleep(3)
+    return [], ultimo_error
 
 
 def _copias_en_primera_pagina_pdf(ruta: Path) -> list[str]:
@@ -184,8 +257,12 @@ def detectar_copias_en_evidencia(ruta: str | Path, usar_gemini: bool = True,
     if es_oficial:
         return [], None
 
+    hay_clave_vision = bool(
+        os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEYS")
+        or os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEYS")
+    )
     nota: str | None = None
-    if usar_gemini and os.environ.get("GEMINI_API_KEY"):
+    if usar_gemini and hay_clave_vision:
         copias, nota = detectar_copias_con_gemini(paginas[0])
         if copias:
             return copias, nota

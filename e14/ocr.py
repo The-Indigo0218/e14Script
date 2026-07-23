@@ -23,6 +23,7 @@ import base64
 import json
 import os
 import socket
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -373,6 +374,35 @@ class BackendGemini:
         return lectura
 
 
+class BackendGeminiMultiKey:
+    """
+    Reparte las llamadas entre varias API keys de Gemini (round-robin, thread-safe).
+
+    Cada key de Google tiene su propio cupo de requests/minuto; con un solo lote
+    grande (cientos de actas) una sola key se queda corta y dispara reintentos
+    429 que frenan todo. Rotar entre N keys multiplica el cupo efectivo por N,
+    así que con --paralelo además de varias keys el lote corre mucho más rápido.
+    """
+    nombre = "gemini (multi-key)"
+
+    def __init__(self, api_keys: list[str], modelo: str = "gemini-3.5-flash"):
+        self._backends = [BackendGemini(k, modelo) for k in api_keys]
+        self._lock = threading.Lock()
+        self._i = 0
+
+    def _siguiente(self) -> "BackendGemini":
+        with self._lock:
+            b = self._backends[self._i % len(self._backends)]
+            self._i += 1
+            return b
+
+    def reconocer_votos(self, imagen_alineada, layout_id: str) -> LecturaOCR:
+        return self._siguiente().reconocer_votos(imagen_alineada, layout_id)
+
+    def leer_identificadores(self, imagen_alineada) -> LecturaOCR:
+        return self._siguiente().leer_identificadores(imagen_alineada)
+
+
 # ─── Backend GPT (OpenAI, REST) — verificador opcional ────────────────────────
 class BackendGPT:
     nombre = "gpt"
@@ -527,6 +557,36 @@ class BackendOpenRouter:
         return _parsear_identificadores(texto)
 
 
+class BackendOpenRouterMultiKey:
+    """
+    Reparte las llamadas entre varias API keys de OpenRouter (round-robin).
+
+    OJO: si las keys son de la MISMA cuenta, el límite de rate de OpenRouter
+    es por cuenta/saldo, no por key — rotar puede no multiplicar el cupo como
+    pasa con Gemini (keys de proyectos distintos). Aun así no hace daño
+    probarlo: si el límite real es por key (o por conexión), ayuda; si es
+    estrictamente por cuenta, simplemente no perjudica.
+    """
+    nombre = "openrouter (multi-key)"
+
+    def __init__(self, api_keys: list[str], modelo: str):
+        self._backends = [BackendOpenRouter(k, modelo) for k in api_keys]
+        self._lock = threading.Lock()
+        self._i = 0
+
+    def _siguiente(self) -> "BackendOpenRouter":
+        with self._lock:
+            b = self._backends[self._i % len(self._backends)]
+            self._i += 1
+            return b
+
+    def reconocer_votos(self, imagen_alineada, layout_id: str) -> LecturaOCR:
+        return self._siguiente().reconocer_votos(imagen_alineada, layout_id)
+
+    def leer_identificadores(self, imagen_alineada) -> LecturaOCR:
+        return self._siguiente().leer_identificadores(imagen_alineada)
+
+
 # ─── Respaldo: cambia de backend SOLO si el principal se quedó sin cuota ──────
 class BackendConFallback:
     """
@@ -541,10 +601,27 @@ class BackendConFallback:
     devolvió nada usable.
     """
 
+    # Reintentos SOLO del respaldo y SOLO ante error transitorio de red (SSL,
+    # timeout, conexión rechazada) — los backends marcan esto con prefijo
+    # "Error <nombre>: ...". Sin esto, un corte de red puntual en el respaldo
+    # (que ya es la segunda chance) dejaba la mesa en REVISAR sin necesidad,
+    # cuando con 1-2 reintentos casi siempre responde bien.
+    _REINTENTOS_RESPALDO = 3
+    _ESPERA_REINTENTO = 3
+
     def __init__(self, principal, respaldo):
         self.principal = principal
         self.respaldo = respaldo
         self.nombre = f"{principal.nombre}+respaldo_{respaldo.nombre}"
+
+    def _llamar_respaldo_con_reintento(self, llamar) -> LecturaOCR:
+        lectura = llamar()
+        intentos = 1
+        while "Error " in (lectura.notas or "") and intentos < self._REINTENTOS_RESPALDO:
+            time.sleep(self._ESPERA_REINTENTO)
+            lectura = llamar()
+            intentos += 1
+        return lectura
 
     def reconocer_votos(self, imagen_alineada, layout_id: str) -> LecturaOCR:
         lectura = self.principal.reconocer_votos(imagen_alineada, layout_id)
@@ -552,7 +629,9 @@ class BackendConFallback:
         if not sin_cuota:
             return lectura
 
-        lectura2 = self.respaldo.reconocer_votos(imagen_alineada, layout_id)
+        lectura2 = self._llamar_respaldo_con_reintento(
+            lambda: self.respaldo.reconocer_votos(imagen_alineada, layout_id)
+        )
         nota = f"Cuota de {self.principal.nombre} agotada (429) -> se usó {self.respaldo.nombre} de respaldo."
         lectura2.notas = f"{lectura2.notas} | {nota}" if lectura2.notas else nota
         return lectura2
@@ -562,7 +641,9 @@ class BackendConFallback:
         sin_cuota = "429" in (lectura.notas or "") or "429" in (lectura.detalle_api or "")
         if not sin_cuota:
             return lectura
-        lectura2 = self.respaldo.leer_identificadores(imagen_alineada)
+        lectura2 = self._llamar_respaldo_con_reintento(
+            lambda: self.respaldo.leer_identificadores(imagen_alineada)
+        )
         nota = f"Cuota de {self.principal.nombre} agotada (429) -> se usó {self.respaldo.nombre} de respaldo."
         lectura2.notas = f"{lectura2.notas} | {nota}" if lectura2.notas else nota
         return lectura2
@@ -659,8 +740,10 @@ def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool |
     elegido = (preferido or os.environ.get("OCR_BACKEND") or "").lower()
 
     gem = os.environ.get("GEMINI_API_KEY")
+    gem_keys = [k.strip() for k in os.environ.get("GEMINI_API_KEYS", "").split(",") if k.strip()]
     gpt = os.environ.get("OPENAI_API_KEY")
     openrouter = os.environ.get("OPENROUTER_API_KEY")
+    openrouter_keys = [k.strip() for k in os.environ.get("OPENROUTER_API_KEYS", "").split(",") if k.strip()]
     if verificar_baja_confianza is None:
         verificar = os.environ.get("OCR_VERIFICAR_BAJA_CONFIANZA", "").lower() in ("1", "true", "yes")
     else:
@@ -670,11 +753,17 @@ def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool |
         return BackendManual()
     if elegido == "gemini" or (not elegido and gem):
         if gem:
-            principal = BackendGemini(gem, os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"))
-            if openrouter:
-                respaldo = BackendOpenRouter(
-                    openrouter, os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash")
-                )
+            modelo_gem = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+            if len(gem_keys) > 1:
+                principal = BackendGeminiMultiKey(gem_keys, modelo_gem)
+            else:
+                principal = BackendGemini(gem, modelo_gem)
+            if openrouter or openrouter_keys:
+                modelo_or = os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash")
+                if len(openrouter_keys) > 1:
+                    respaldo = BackendOpenRouterMultiKey(openrouter_keys, modelo_or)
+                else:
+                    respaldo = BackendOpenRouter(openrouter or openrouter_keys[0], modelo_or)
                 principal = BackendConFallback(principal, respaldo)
             if verificar and gpt:
                 verificador = BackendGPT(gpt, os.environ.get("OPENAI_MODEL", "gpt-4o"))
@@ -683,11 +772,12 @@ def crear_backend(preferido: str | None = None, verificar_baja_confianza: bool |
     if elegido == "gpt" or (not elegido and gpt):
         if gpt:
             return BackendGPT(gpt, os.environ.get("OPENAI_MODEL", "gpt-4o"))
-    if elegido == "openrouter" or (not elegido and openrouter):
-        if openrouter:
-            return BackendOpenRouter(
-                openrouter, os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash")
-            )
+    if elegido == "openrouter" or (not elegido and (openrouter or openrouter_keys)):
+        modelo_or = os.environ.get("OPENROUTER_MODEL", "google/gemini-3.5-flash")
+        if len(openrouter_keys) > 1:
+            return BackendOpenRouterMultiKey(openrouter_keys, modelo_or)
+        if openrouter or openrouter_keys:
+            return BackendOpenRouter(openrouter or openrouter_keys[0], modelo_or)
     return BackendManual()
 
 

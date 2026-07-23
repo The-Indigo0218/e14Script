@@ -80,7 +80,16 @@ def leer_acta_pdf(pdf_path: str, alineador: Alineador, ocr, fuente: str,
         copias_en_evidencia=serializar_copias(copias_visibles) or None,
         **meta,
     )
-    if not ok_traz:
+    # Solo bloquea por CONTRADICCIÓN real (dijo que leyó de una copia que no
+    # aparece en la evidencia) — no por simple ambigüedad de cuál copia se
+    # fotografió. Las 3 copias de un E-14 deben llevar los mismos números, así
+    # que no saber cuál se fotografió no invalida los votos leídos.
+    contradice = (
+        copia_leida != TIPO_DESCONOCIDO
+        and copias_visibles
+        and copia_leida not in [normalizar_tipo_acta(c) for c in copias_visibles]
+    )
+    if contradice:
         acta.necesita_revision = True
 
     notas: list[str] = []

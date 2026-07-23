@@ -18,6 +18,7 @@ columna 'tipo_acta' del CSV). Sin ello queda como 'desconocido'.
 
 import csv
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from e14.almacen import Almacen
@@ -85,7 +86,7 @@ def cargar_csv(ruta_csv: str, db: str, tipo: str | None) -> int:
 
 
 def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None,
-                layouts: list[str] | None) -> int:
+                layouts: list[str] | None, paralelo: int = 1) -> int:
     if not Path(PLANTILLA).exists():
         print(f"❌ Falta la plantilla oficial: {PLANTILLA}")
         sys.exit(1)
@@ -102,12 +103,18 @@ def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None,
         print("Modo: solo página de candidatos/totales (sin firmas)\n")
     else:
         print()
+    if paralelo > 1:
+        print(f"Paralelo: {paralelo} lecturas OCR a la vez\n")
+
     alm = Almacen(db)
-    for pdf in pdfs:
+
+    def _leer(pdf: Path):
         cod = codigo if len(pdfs) == 1 else None
-        acta = leer_acta_pdf(str(pdf), alineador, ocr, FUENTE_TESTIGO, cod,
-                              tipo_acta=tipo, layouts=layouts)
-        alm.guardar(acta)
+        return pdf, leer_acta_pdf(str(pdf), alineador, ocr, FUENTE_TESTIGO, cod,
+                                  tipo_acta=tipo, layouts=layouts)
+
+    def _reportar(pdf: Path, acta) -> None:
+        alm.guardar(acta)  # siempre en el hilo principal (sqlite no es multi-escritor)
         estado = "REVISAR" if acta.necesita_revision else "OK"
         conf = f"{acta.confianza:.0%}" if acta.confianza is not None else "—"
         print(f"  {pdf.name}: mesa={acta.codigo_mesa}  confianza={conf}  -> {estado}")
@@ -117,6 +124,15 @@ def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None,
         imprimir_contenido_acta(acta)
         if len(pdfs) == 1:
             imprimir_siguiente_paso_testigo(acta.codigo_mesa)
+
+    if paralelo <= 1:
+        for pdf in pdfs:
+            _reportar(*_leer(pdf))
+    else:
+        with ThreadPoolExecutor(max_workers=paralelo) as ex:
+            futuros = [ex.submit(_leer, pdf) for pdf in pdfs]
+            for fut in as_completed(futuros):
+                _reportar(*fut.result())
     alm.cerrar()
     if ocr.nombre == "manual":
         print("   ⚠️  OCR en modo manual: define GEMINI_API_KEY en .env para leer de verdad.")
@@ -124,7 +140,7 @@ def cargar_pdfs(entrada: Path, db: str, codigo: str | None, tipo: str | None,
 
 
 def main():
-    entrada, db, codigo, tipo, layouts, _solo_p1 = parsear_args(CARPETA_DEFECTO)
+    entrada, db, codigo, tipo, layouts, _solo_p1, paralelo, _forzar = parsear_args(CARPETA_DEFECTO)
 
     if not entrada.exists():
         print(f"❌ No existe: {entrada}")
@@ -134,7 +150,7 @@ def main():
         n = cargar_csv(str(entrada), db, tipo)
         print(f"✅ {n} actas de testigos cargadas en {db} (fuente='testigo', modo CSV).")
     else:
-        n = cargar_pdfs(entrada, db, codigo, tipo, layouts)
+        n = cargar_pdfs(entrada, db, codigo, tipo, layouts, paralelo)
         print(f"\n✅ Procesados {n} E-14 de testigos en {db} (fuente='testigo', modo OCR).")
 
 
